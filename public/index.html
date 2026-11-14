@@ -1,0 +1,3844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Toing Pro</title>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+:root {
+  --bg-app: #f8fafc;
+  --bg-card: #ffffff;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --primary: #8b5cf6;
+  --primary-hover: #7c3aed;
+  --primary-light: #ede9fe;
+  --border-color: #e2e8f0;
+  --input-bg: #f8fafc;
+  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
+  --bottom-bar-height: 64px;
+}
+
+body.dark-theme {
+  --bg-app: #0f172a;
+  --bg-card: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-color: #334155;
+  --input-bg: #111827;
+  --primary-light: rgba(139, 92, 246, 0.15);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* SVG Size Safeguards - Prevents oversized icons in flex containers */
+svg {
+  flex-shrink: 0;
+}
+
+.btn-icon,
+.btn-primary svg,
+.btn-secondary svg,
+.btn svg,
+button svg {
+  width: 18px !important;
+  height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+  flex-shrink: 0;
+}
+
+.book-icon,
+.saved-title-wrap svg {
+  width: 18px !important;
+  height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+  flex-shrink: 0;
+}
+
+.search-icon,
+.search-input-wrap svg {
+  width: 17px !important;
+  height: 17px !important;
+  max-width: 17px !important;
+  max-height: 17px !important;
+  flex-shrink: 0;
+}
+
+.pill-icon {
+  width: 16px !important;
+  height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
+}
+
+.dropdown-chevron {
+  width: 14px !important;
+  height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+}
+
+.moon-icon {
+  width: 18px !important;
+  height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+}
+
+.title-icon-box svg {
+  width: 18px !important;
+  height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+}
+
+.switch-opt svg {
+  width: 16px !important;
+  height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
+}
+
+.sec-icon {
+  width: 18px !important;
+  height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+}
+
+.search-glass-icon {
+  width: 18px !important;
+  height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+}
+
+.app-container {
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  background-color: var(--bg-app);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(var(--bottom-bar-height) + 30px);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  border-radius: 12px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 19px;
+  box-shadow: 0 4px 10px rgba(124, 58, 237, 0.3);
+}
+
+.brand-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name-bold {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text-main);
+  letter-spacing: -0.3px;
+}
+
+.pro-badge {
+  font-size: 10px;
+  font-weight: 800;
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.5px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.active-account-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.active-account-pill.has-active {
+  background-color: var(--primary-light);
+  border-color: rgba(139, 92, 246, 0.3);
+  color: #4c1d95;
+}
+
+.pill-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.dropdown-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.theme-toggle-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-main);
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+}
+
+.moon-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.delivery-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #ede9fe;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+  padding: 8px 18px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.banner-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.banner-pin {
+  font-size: 15px;
+}
+
+.banner-text {
+  display: flex;
+  gap: 4px;
+}
+
+.banner-label {
+  color: var(--text-muted);
+}
+
+.banner-text strong {
+  color: #5b21b6;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.banner-change-btn {
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.app-main {
+  padding: 16px;
+  flex: 1;
+}
+
+.view-panel {
+  display: none;
+}
+
+.view-panel.active {
+  display: block;
+}
+
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  box-shadow: var(--card-shadow);
+  margin-bottom: 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.title-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background-color: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.title-icon-box svg {
+  width: 18px;
+  height: 18px;
+}
+
+.action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.15s, border-color 0.2s;
+}
+
+.action-card:active {
+  transform: scale(0.99);
+}
+
+.action-card-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.action-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-icon-box.purple-bg {
+  background-color: #f3e8ff;
+  color: #8b5cf6;
+}
+
+.action-icon-box.green-bg {
+  background-color: #dcfce7;
+  color: #10b981;
+}
+
+.action-icon-box svg {
+  width: 22px;
+  height: 22px;
+}
+
+.action-text h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 3px;
+}
+
+.action-text p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pill-btn {
+  padding: 7px 16px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+}
+
+.pill-btn.purple-pill {
+  background-color: #f3e8ff;
+  color: #7c3aed;
+}
+
+.pill-btn.green-pill {
+  background-color: #dcfce7;
+  color: #059669;
+}
+
+.saved-section-header {
+  display: flex;
+  align-items: center;
+  margin: 18px 0 14px 0;
+}
+
+.saved-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.sec-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
+}
+
+.sec-divider {
+  flex: 1;
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 0 12px;
+}
+
+.refresh-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: #7c3aed;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.refresh-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+.address-card-item {
+  background-color: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.address-card-item:hover {
+  border-color: #cbd5e1;
+}
+
+.address-card-item.is-selected {
+  border-color: var(--primary);
+  background-color: rgba(139, 92, 246, 0.03);
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.12);
+}
+
+.address-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.address-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.badge-tag {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.5px;
+}
+
+.badge-tag.tag-other {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.badge-tag.tag-account {
+  background-color: #ecfdf5;
+  color: #059669;
+}
+
+.trash-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.15s;
+}
+
+.trash-btn:hover {
+  color: #ef4444;
+}
+
+.trash-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.address-user-line {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.address-text-full {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.selected-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #7c3aed;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.search-bar-wrap {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--card-shadow);
+  gap: 10px;
+}
+
+.search-bar-wrap:focus-within {
+  border-color: var(--primary);
+}
+
+.search-glass-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+}
+
+.search-bar-wrap input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.clear-search-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background-color: #e2e8f0;
+  color: #64748b;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.search-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  margin-bottom: 14px;
+}
+
+.restaurants-count-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.open-now-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #ecfdf5;
+  color: #059669;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.green-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #10b981;
+}
+
+.restaurant-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.restaurant-card:hover {
+  transform: translateY(-1px);
+  border-color: #cbd5e1;
+}
+
+.rest-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.rest-img-wrapper {
+  position: relative;
+  width: 86px;
+  height: 86px;
+  flex-shrink: 0;
+}
+
+.rest-img-thumb {
+  width: 86px;
+  height: 86px;
+  border-radius: 14px;
+  object-fit: cover;
+  background-color: #f1f5f9;
+  display: block;
+}
+
+.rest-img-thumb.is-closed {
+  filter: grayscale(100%);
+  opacity: 0.85;
+}
+
+.rest-img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+}
+
+.closed-overlay-badge {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(15, 23, 42, 0.92);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 2px 9px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.rest-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rest-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1.25;
+}
+
+.highlight-term {
+  color: #7c3aed;
+  font-weight: 800;
+}
+
+.rest-rating-sla {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.rating-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background-color: #16a34a;
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.rating-pill.rating-closed {
+  background-color: #64748b;
+}
+
+.sla-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.rest-cuisines {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rest-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.rest-closed-now-row {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1px;
+}
+ 
+
+.rest-location svg {
+  width: 12px;
+  height: 12px;
+  color: #ef4444;
+}
+
+.rest-chevron {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+}
+
+.rest-chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  height: var(--bottom-bar-height);
+  background-color: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 50;
+  padding: 0 4px;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px 0;
+  transition: all 0.2s;
+}
+
+.nav-item svg {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.15s;
+}
+
+.nav-item span {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.nav-item.active {
+  color: var(--primary);
+}
+
+.nav-item.active svg {
+  transform: translateY(-2px);
+  stroke-width: 2.5;
+}
+
+.pill-switch {
+  display: flex;
+  background-color: var(--input-bg);
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+}
+
+.switch-opt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.switch-opt.active {
+  background-color: var(--primary);
+  color: #ffffff;
+}
+
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.phone-input-group {
+  display: flex;
+  align-items: center;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  margin-bottom: 14px;
+}
+
+.country-badge {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border-color);
+}
+
+.phone-input-group input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.btn-primary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #9333ea, #7c3aed);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+}
+
+.btn-inline {
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: var(--radius-pill);
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 11px;
+}
+
+/* ========================================================
+   ITEM CUSTOMISATION BOTTOM SHEET MODAL (1:1 ORIGINAL TOING BOT)
+   ======================================================== */
+.customise-bottom-sheet {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.65);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  backdrop-filter: blur(2px);
+  transition: opacity 0.2s ease;
+}
+
+.customise-bottom-sheet.hidden {
+  display: none !important;
+}
+
+.customise-sheet-box {
+  background: var(--bg-card);
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -8px 30px rgba(0,0,0,0.25);
+  animation: slideUpSheet 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpSheet {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.customise-sheet-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: var(--bg-card);
+}
+
+.customise-sheet-title-wrap {
+  flex: 1;
+  padding-right: 12px;
+}
+
+.customise-dish-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 3px;
+}
+
+.customise-dish-base-price {
+  font-size: 14px;
+  font-weight: 700;
+  color: #16a34a;
+}
+
+.customise-close-btn {
+  background: #f1f5f9;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: background 0.15s;
+}
+
+.customise-close-btn:hover {
+  background: #e2e8f0;
+}
+
+.customise-sheet-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.addon-group-section {
+  margin-bottom: 22px;
+}
+
+.addon-group-header {
+  margin-bottom: 12px;
+}
+
+.addon-group-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.addon-group-sub {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.addon-choice-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 0;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  cursor: pointer;
+  user-select: none;
+}
+
+.addon-choice-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.addon-choice-checkbox, .addon-choice-radio {
+  width: 18px;
+  height: 18px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+
+.addon-choice-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.addon-choice-price {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+.customise-sheet-footer {
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.customise-footer-total {
+  display: flex;
+  flex-direction: column;
+}
+
+.customise-total-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.customise-total-val {
+  font-size: 19px;
+  font-weight: 900;
+  color: var(--text-main);
+}
+
+.customise-add-btn {
+  flex: 1;
+  background-color: #16a34a;
+  color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: transform 0.15s, background 0.15s;
+}
+
+.customise-add-btn:hover {
+  background-color: #15803d;
+  transform: scale(1.02);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+
+.modal-box {
+  background-color: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: var(--card-shadow);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.modal-header h3 {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.modal-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.modal-input {
+  width: 100%;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text-main);
+  outline: none;
+  margin-bottom: 12px;
+}
+
+.app-watermark {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 10px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(15, 23, 42, 0.9);
+  color: #ffffff;
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 100;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Menu View Styles */
+.menu-header-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.back-btn-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+/* ========================================================
+   RESTAURANT MENU VIEW - 1:1 TOING PRO / MAIN BOT UI
+   ======================================================== */
+.menu-top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.menu-back-arrow {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-main);
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.menu-top-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-main);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.veg-toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.veg-toggle-wrap input {
+  display: none;
+}
+
+.veg-toggle-slider {
+  width: 40px;
+  height: 22px;
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+  position: relative;
+  transition: 0.2s;
+  display: inline-block;
+}
+
+.veg-toggle-slider::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  top: 3px;
+  left: 3px;
+  transition: 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.veg-toggle-wrap input:checked + .veg-toggle-slider {
+  background-color: #16a34a;
+}
+
+.veg-toggle-wrap input:checked + .veg-toggle-slider::after {
+  transform: translateX(18px);
+}
+
+.veg-toggle-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+/* Hero Restaurant Banner Card */
+.menu-hero-card {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  margin-bottom: 14px;
+}
+
+.hero-img-wrap {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  background: #1e1b4b;
+  overflow: hidden;
+}
+
+.hero-bg-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hero-img-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.75) 100%);
+}
+
+.hero-rest-info {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  z-index: 2;
+}
+
+.hero-rest-name {
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  margin: 0;
+}
+
+.hero-rating-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background-color: #16a34a;
+  color: #ffffff;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.hero-floating-outlet-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-card);
+}
+
+.outlet-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.outlet-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background-color: #ede9fe;
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.outlet-icon-box svg {
+  width: 20px;
+  height: 20px;
+}
+
+.outlet-badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: #f59e0b;
+  letter-spacing: 0.5px;
+}
+
+.outlet-location {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.outlet-right {
+  text-align: right;
+}
+
+.outlet-dist {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.outlet-sla {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+/* In-Restaurant Dish Search */
+.menu-dish-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 0 14px;
+  height: 46px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.menu-dish-search-wrap input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-main);
+  padding-left: 8px;
+}
+
+/* Category Accordion */
+.category-section {
+  margin-bottom: 18px;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cat-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cat-title {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--text-main);
+}
+
+.cat-count-pill {
+  background: var(--input-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.cat-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  transition: transform 0.25s;
+}
+
+.cat-chevron.collapsed {
+  transform: rotate(180deg);
+}
+
+/* 1:1 Dish Item Card matching Image 2 */
+.dish-item-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  transition: transform 0.15s;
+}
+
+.dish-item-info {
+  flex: 1;
+}
+
+.dish-item-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-top: 4px;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.dish-price-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.dish-price {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--text-main);
+}
+
+.dish-orig-price {
+  font-size: 12px;
+  color: #94a3b8;
+  text-decoration: line-through;
+  font-weight: 600;
+}
+
+.dish-discount-pct {
+  font-size: 11px;
+  font-weight: 800;
+  color: #16a34a;
+}
+
+.dish-item-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Right side of dish: Image + ADD pill */
+.dish-img-action-wrap {
+  position: relative;
+  width: 116px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.dish-thumb-img {
+  width: 116px;
+  height: 98px;
+  border-radius: 16px;
+  object-fit: cover;
+  background: #f1f5f9;
+  display: block;
+}
+
+.dish-thumb-empty {
+  width: 116px;
+  height: 40px;
+}
+
+.dish-btn-overlay {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.dish-add-pill-btn {
+  background: #ffffff;
+  color: #16a34a;
+  border: 1px solid #16a34a;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 5px 22px;
+  cursor: pointer;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.12);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.dish-add-pill-btn:hover {
+  background: #f0fdf4;
+  transform: scale(1.03);
+}
+
+.dish-customisable-sub {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 600;
+  margin-top: 14px;
+  text-align: center;
+}
+
+.veg-symbol {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #16a34a;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.veg-symbol-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #16a34a;
+}
+
+.nonveg-symbol {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #dc2626;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.nonveg-symbol-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #dc2626;
+}
+
+.btn-add-food {
+  position: absolute;
+  bottom: -8px;
+  background-color: #ffffff;
+  color: #16a34a;
+  border: 1.5px solid #16a34a;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 18px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  transition: all 0.15s;
+}
+
+.btn-add-food:hover {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
+.qty-counter-pill {
+  position: absolute;
+  bottom: -8px;
+  display: flex;
+  align-items: center;
+  background-color: #16a34a;
+  color: #ffffff;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 3px 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  gap: 8px;
+}
+
+.qty-btn {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* Floating Cart Bar */
+.floating-cart-bar {
+  position: fixed;
+  bottom: calc(var(--bottom-bar-height) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 448px;
+  background-color: #16a34a;
+  color: #ffffff;
+  padding: 12px 18px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 800;
+  font-size: 14px;
+  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.35);
+  z-index: 49;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.floating-cart-bar:hover {
+  transform: translateX(-50%) translateY(-2px);
+}
+
+/* Cart Items & Bill Details */
+.cart-items-wrapper {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  margin-bottom: 14px;
+  box-shadow: var(--card-shadow);
+}
+
+.cart-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.cart-item-row:last-child {
+  border-bottom: none;
+}
+
+.cart-item-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.cart-qty-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.cart-qty-ctrl button {
+  background: none;
+  border: none;
+  font-weight: 800;
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 15px;
+}
+
+.cart-bill-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--card-shadow);
+}
+
+.bill-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.bill-row.discount-row {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.bill-divider {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 10px 0;
+}
+
+.bill-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.btn-checkout-order {
+  width: 100%;
+  background-color: #16a34a;
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.3);
+  margin-top: 10px;
+}
+
+.btn-checkout-order:hover {
+  background-color: #15803d;
+}
+
+/* ========================================================
+   CART VIEW 1:1 WITH USER SCREENSHOT (@decoders_toingbot)
+   ======================================================== */
+.cart-page-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 70px;
+}
+
+.cart-address-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.cart-address-card:active {
+  transform: scale(0.99);
+}
+
+.cart-addr-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background-color: rgba(124, 58, 237, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cart-addr-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.cart-addr-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+.cart-addr-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cart-chevron {
+  font-size: 20px;
+  line-height: 1;
+  color: #94a3b8;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Order Section */
+.cart-order-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cart-order-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 0;
+}
+
+.cart-sec-title {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.cart-sec-summary {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.cart-order-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.cart-rest-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cart-rest-logo-img {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  object-fit: cover;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.cart-rest-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.cart-rest-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cart-rest-sub-info {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.cart-clear-btn-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #fee2e2;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #ef4444;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.dark-theme .cart-clear-btn-circle {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+.cart-clear-btn-circle:hover {
+  background-color: #fecaca;
+  transform: scale(1.05);
+}
+
+/* Dishes in Cart */
+.cart-dishes-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cart-dish-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+  gap: 10px;
+}
+
+.cart-dish-row:last-child {
+  border-bottom: none;
+}
+
+.cart-dish-info-col {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cart-dish-symbol {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #16a34a;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.cart-dish-symbol.nonveg {
+  border-color: #dc2626;
+}
+
+.cart-dish-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #16a34a;
+}
+
+.cart-dish-symbol.nonveg .cart-dish-dot {
+  background-color: #dc2626;
+}
+
+.cart-dish-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+.cart-dish-addons-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.25;
+}
+
+.cart-dish-actions-col {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Dark Green Pill Quantity Counter (1:1 with Screenshot) */
+.cart-qty-pill-dark {
+  background-color: #15803d;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 4px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 800;
+  min-width: 68px;
+  justify-content: space-between;
+}
+
+.cart-qty-pill-dark button {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.cart-qty-pill-dark button:hover {
+  opacity: 0.85;
+}
+
+.cart-dish-price {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  min-width: 44px;
+  text-align: right;
+}
+
+/* Cooking Request */
+.cart-cooking-req-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 0;
+  margin-top: 4px;
+  border-top: 1px dashed var(--border-color);
+  color: #7c3aed;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.cart-cooking-req-row:hover {
+  opacity: 0.85;
+}
+
+/* Apply Coupon Card */
+.cart-coupon-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.cart-coupon-card:active {
+  transform: scale(0.99);
+}
+
+.coupon-icon-box {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background-color: rgba(124, 58, 237, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c3aed;
+  flex-shrink: 0;
+}
+
+.coupon-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.coupon-card-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+.coupon-card-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.cart-coupon-drawer {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 12px;
+  margin-top: -4px;
+}
+
+.coupon-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.coupon-input-row input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--input-bg);
+  color: var(--text-main);
+}
+
+.btn-coupon-apply {
+  background-color: var(--primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* Bill Details Card */
+.cart-bill-details-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.bill-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.bill-title-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bill-title-txt {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.bill-title-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-claim-fc-pill {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  border: none;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.btn-claim-fc-pill:active {
+  transform: scale(0.97);
+}
+
+.fc-bolt {
+  color: #facc15;
+}
+
+.btn-bill-refresh {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: transform 0.2s;
+}
+
+.btn-bill-refresh:hover {
+  transform: rotate(90deg);
+}
+
+.bill-items-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bill-data-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.bill-row-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.bill-row-val {
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.strikethrough-gray {
+  text-decoration: line-through;
+  color: #94a3b8;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.text-green-bold {
+  color: #16a34a;
+  font-weight: 800;
+}
+
+.bill-dashed-divider {
+  border-top: 1px dashed var(--border-color);
+  margin: 14px 0 12px;
+}
+
+.bill-to-pay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.to-pay-label {
+  font-size: 15.5px;
+  font-weight: 900;
+  color: var(--text-main);
+}
+
+.to-pay-val {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--text-main);
+}
+
+/* Payment Method Card */
+.cart-payment-method-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.payment-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pay-title-txt {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.pay-methods-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pay-opt-box {
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pay-opt-box.selected {
+  background-color: #f0fdf4;
+  border: 1.5px solid #10b981;
+}
+
+.dark-theme .pay-opt-box.selected {
+  background-color: rgba(16, 185, 129, 0.12);
+  border-color: #10b981;
+}
+
+.pay-opt-box.disabled {
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.pay-opt-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background-color: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+}
+
+.pay-opt-box.disabled .pay-opt-icon-wrap {
+  background-color: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+}
+
+.pay-opt-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pay-opt-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.pay-opt-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.pay-opt-badge-soon {
+  font-size: 11px;
+  color: #ea580c;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.pay-opt-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pay-opt-radio-empty {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+  flex-shrink: 0;
+}
+
+/* Sticky Bottom Pay Bar (Pinned right above Bottom Navigation) */
+.cart-sticky-pay-bar {
+  position: fixed;
+  bottom: var(--bottom-bar-height);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  background-color: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 45;
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.05);
+}
+
+.sticky-pay-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.sticky-pay-caption {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.sticky-pay-price {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--text-main);
+  line-height: 1.1;
+}
+
+.btn-sticky-order {
+  background-color: #059669;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 11px 18px;
+  font-size: 13.5px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+.btn-sticky-order:hover {
+  background-color: #047857;
+}
+
+.btn-sticky-order:active {
+  transform: scale(0.98);
+}
+
+/* ========================================================
+   ACCOUNTS, ADDRESS & BULK 1:1 WITH USER SCREENSHOTS
+   ======================================================== */
+
+/* Accounts Screen Elements */
+.saved-accounts-section {
+  margin-top: 24px;
+}
+
+.otp-group {
+  margin-bottom: 14px;
+}
+
+.otp-group input,
+#inputOtp {
+  width: 100%;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-md) !important;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+  outline: none;
+  letter-spacing: 4px;
+  text-align: center;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.otp-group input:focus,
+#inputOtp:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.saved-accounts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 18px 2px 10px;
+}
+
+.saved-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.saved-title-wrap svg {
+  color: #7c3aed;
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1.5px;
+  background: #d8b4fe;
+  margin: 0 4px;
+}
+
+.count-badge {
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: var(--input-bg);
+  border: 1.5px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin: 10px 0 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.search-input-wrap:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+}
+
+.search-input-wrap svg {
+  color: #94a3b8;
+  width: 17px !important;
+  height: 17px !important;
+  flex-shrink: 0;
+}
+
+.search-input-wrap input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  box-sizing: border-box;
+}
+
+.search-input-wrap input::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.accounts-filters-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 10px;
+}
+
+.acc-chips-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acc-chip {
+  background: transparent;
+  border: 1.5px solid var(--border-color);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s;
+}
+
+.acc-chip.active {
+  background-color: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+
+.btn-clear-accounts-sq {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1.5px solid #fca5a5;
+  background: transparent;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-clear-accounts-sq:hover {
+  background-color: #fee2e2;
+}
+
+.account-row-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+
+.account-row-card.is-active {
+  border: 1.5px solid #c084fc;
+  background-color: rgba(192, 132, 252, 0.08);
+}
+
+.acc-card-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.acc-avatar-wrap {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.acc-avatar-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background-color: rgba(124, 58, 237, 0.12);
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.acc-check-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 15px;
+  height: 15px;
+  background-color: #16a34a;
+  border: 1.5px solid #ffffff;
+  border-radius: 50%;
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.acc-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.acc-card-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.acc-card-phone {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.acc-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-acc-used {
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-acc-used.is-used {
+  background-color: #fef3c7;
+  border-color: #fde68a;
+  color: #d97706;
+}
+
+.btn-acc-session {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.btn-acc-session:hover {
+  transform: scale(1.05);
+}
+
+.btn-acc-trash {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+
+.btn-acc-trash:hover {
+  color: #ef4444;
+}
+
+/* Address Screen Elements (1:1 with Screenshot 2) */
+.addr-card-item {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.addr-card-item.is-selected {
+  border-color: #a855f7;
+  box-shadow: 0 4px 14px rgba(168, 85, 247, 0.1);
+}
+
+.addr-card-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.addr-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.addr-badge.badge-gray {
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.dark-theme .addr-badge.badge-gray {
+  background-color: #334155;
+  color: #cbd5e1;
+}
+
+.addr-badge.badge-purple {
+  background-color: #8b5cf6;
+  color: #ffffff;
+}
+
+.addr-badge.badge-green {
+  background-color: #dcfce7;
+  color: #059669;
+}
+
+.dark-theme .addr-badge.badge-green {
+  background-color: rgba(5, 150, 105, 0.2);
+  color: #34d399;
+}
+
+.addr-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.addr-user-text {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.addr-trash-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+
+.addr-trash-btn:hover {
+  color: #ef4444;
+}
+
+.addr-text-line {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+/* Bulk Screen Elements (1:1 with Screenshot 1) */
+.bulk-page-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 60px;
+}
+
+.bulk-action-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.bulk-action-card:active {
+  transform: scale(0.99);
+}
+
+.bulk-card-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bulk-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background-color: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bulk-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bulk-card-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+.bulk-card-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.bulk-card-stat {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #7c3aed;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bulk-card-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.bulk-val-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.bulk-amount {
+  font-size: 18px;
+  font-weight: 900;
+  color: #059669;
+  line-height: 1.1;
+}
+
+.bulk-unit {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.bulk-chevron {
+  font-size: 20px;
+  color: #94a3b8;
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+  </style>
+</head>
+<body class="light-theme">
+  <div class="app-container">
+    
+    <!-- Top App Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-logo">T</div>
+        <div class="brand-name">
+          <span class="name-bold">Toing</span>
+          <span class="pro-badge">PRO</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <!-- Account Switcher Dropdown Button -->
+        <div class="active-account-pill has-active" id="activeAccountPill" onclick="toggleAccountDropdown()">
+          <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          <span id="activeAccountText">Select Account</span>
+          <svg class="dropdown-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+        <button class="theme-toggle-btn" id="themeToggleBtn" title="Toggle Dark/Light Mode">
+          <svg class="moon-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Selected Delivery Location Banner -->
+    <div class="delivery-banner" id="deliveryBanner" onclick="switchTab('address')">
+      <div class="banner-left">
+        <span class="banner-pin">📍</span>
+        <div class="banner-text">
+          <span class="banner-label">Delivering to:</span>
+          <strong id="selectedAddressLabel">Select Delivery Address</strong>
+        </div>
+      </div>
+      <span class="banner-change-btn">Change</span>
+    </div>
+
+    <!-- Main Content Views -->
+    <main class="app-main">
+
+      <!-- ================= 1. ACCOUNTS VIEW ================= -->
+      <section id="tab-accounts" class="view-panel">
+        <div class="card add-account-card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="title-icon-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" />
+                  <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+              </div>
+              <span>Add Account</span>
+            </div>
+            <div class="pill-switch">
+              <button class="switch-opt active" id="btnModeNumber" onclick="setAccountMode('number')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                  <line x1="12" y1="18" x2="12.01" y2="18" />
+                </svg>
+                <span>Number</span>
+              </button>
+              <button class="switch-opt" id="btnModeJson" onclick="setAccountMode('json')">
+                <span class="code-bracket">&lt;/&gt;</span>
+                <span>JSON</span>
+              </button>
+            </div>
+          </div>
+
+          <div id="numberForm" class="form-content">
+            <label class="form-label">Mobile Number</label>
+            <div class="phone-input-group">
+              <div class="country-badge">IN +91</div>
+              <input type="tel" id="inputPhone" maxlength="10" placeholder="Enter Mobile Number" inputmode="numeric" />
+            </div>
+
+            <div id="otpInputGroup" class="otp-group hidden">
+              <label class="form-label">Enter 6-digit OTP</label>
+              <input type="text" id="inputOtp" maxlength="6" placeholder="Enter 6-Digit OTP" inputmode="numeric" />
+            </div>
+
+            <button class="btn-primary" id="btnSendOtp" onclick="handleOtpAction()">
+              <svg class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
+              <span id="btnSendOtpText">Send OTP</span>
+            </button>
+          </div>
+
+          <div id="jsonForm" class="form-content hidden">
+            <label class="form-label">Paste Session JSON or Token Data</label>
+            <textarea id="inputJson" rows="4" placeholder='{"phone": "9876543210", "tid": "...", "token": "..."}'></textarea>
+            <button class="btn-primary" onclick="handleImportJson()">
+              <svg class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Import Account</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="saved-accounts-section">
+          <div class="saved-accounts-header">
+            <div class="saved-title-wrap">
+              <svg class="book-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              <span>Saved Accounts</span>
+            </div>
+            <div class="divider-line"></div>
+            <span class="count-badge" id="accountsCount">0</span>
+          </div>
+
+          <div class="search-input-wrap">
+            <svg class="search-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input type="text" id="searchAccountInput" placeholder="Search Account..." oninput="filterAccounts()" />
+          </div>
+
+          <!-- Filter Chips & Clear Action (1:1 with Screenshot 3) -->
+          <div class="accounts-filters-row">
+            <div class="acc-chips-left">
+              <button class="acc-chip active" id="chipAll" onclick="setAccountFilter('all')">
+                <span style="font-size:12px;">🛒</span> <span>All</span>
+              </button>
+              <button class="acc-chip" id="chipFresh" onclick="setAccountFilter('fresh')">
+                <span style="font-size:12px;">♻</span> <span>Fresh</span>
+              </button>
+              <button class="acc-chip" id="chipUsed" onclick="setAccountFilter('used')">
+                <span style="font-size:12px;">🕒</span> <span>Used</span>
+              </button>
+            </div>
+            <button class="btn-clear-accounts-sq" onclick="handleClearAllAccounts()" title="Delete all accounts">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          </div>
+
+          <div id="accountsList" class="accounts-list"></div>
+        </div>
+      </section>
+
+      <!-- ================= 2. ADDRESS VIEW (MATCHING IMAGE 1) ================= -->
+      <section id="tab-address" class="view-panel active">
+        
+        <!-- Action Card 1: Add by Address Link -->
+        <div class="action-card add-link-card" onclick="openAddLinkModal()">
+          <div class="action-card-left">
+            <div class="action-icon-box purple-bg">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+            </div>
+            <div class="action-text">
+              <h4>Add by Address Link</h4>
+              <p>Get the address link from Swiggy to add</p>
+            </div>
+          </div>
+          <button class="pill-btn purple-pill">Add +</button>
+        </div>
+
+        <!-- Action Card 2: Add Manually on Map -->
+        <div class="action-card add-map-card" onclick="openAddManualModal()">
+          <div class="action-card-left">
+            <div class="action-icon-box green-bg">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 19l7-7 3 3-7 7-3-3z" />
+                <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+                <path d="M2 2l7.586 7.586" />
+                <circle cx="11" cy="11" r="2" />
+              </svg>
+            </div>
+            <div class="action-text">
+              <h4>Add Manually on Map</h4>
+              <p>Search, pin the location & enter details</p>
+            </div>
+          </div>
+          <button class="pill-btn green-pill">Add +</button>
+        </div>
+
+        <!-- Section: Saved Addresses -->
+        <div class="saved-section-header">
+          <div class="saved-sec-title">
+            <svg class="sec-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+              <line x1="8" y1="2" x2="8" y2="18" />
+              <line x1="16" y1="6" x2="16" y2="22" />
+            </svg>
+            <span>Saved Addresses</span>
+          </div>
+          <div class="sec-divider"></div>
+          <button class="refresh-link" onclick="loadAddresses()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        <!-- Addresses List Container -->
+        <div id="addressList" class="address-cards-list">
+          <div class="loading-state">Loading addresses...</div>
+        </div>
+
+      </section>
+
+      <!-- ================= 3. SEARCH VIEW (MATCHING IMAGE 2) ================= -->
+      <section id="tab-search" class="view-panel">
+        
+        <!-- Search Input Bar -->
+        <div class="search-bar-wrap">
+          <svg class="search-glass-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input type="text" id="inputSearchQuery" placeholder="Search pizza, burger, biryani, thali, rolls..." value="" onkeydown="if(event.key==='Enter') performSearch()" />
+          <button class="clear-search-btn" id="clearSearchBtn" onclick="clearSearchInput()">✕</button>
+        </div>
+
+        <!-- Subheader: Count & Open Now Badge -->
+        <div class="search-meta-bar" id="searchMetaBar">
+          <span class="restaurants-count-text"><strong id="restaurantsCountNum">7</strong> restaurants</span>
+          <span class="open-now-badge">
+            <span class="green-dot"></span>
+            <span id="openNowText">7 open now</span>
+          </span>
+        </div>
+
+        <!-- Restaurants List -->
+        <div id="searchResults" class="restaurants-list-box">
+          <div class="loading-state">Loading Toing restaurants...</div>
+        </div>
+
+      </section>
+
+      <!-- ================= 3.5. RESTAURANT MENU VIEW (1:1 TOING PRO) ================= -->
+      <section id="tab-menu" class="view-panel">
+        
+        <!-- Top Nav: Back Arrow + Rest Title + Veg Toggle -->
+        <div class="menu-top-nav">
+          <button class="menu-back-arrow" onclick="switchTab('search')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px;"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <h2 class="menu-top-title" id="menuTopTitle">Restaurant</h2>
+          <label class="veg-toggle-wrap">
+            <input type="checkbox" id="vegFilterToggle" onchange="toggleVegFilter()" />
+            <span class="veg-toggle-slider"></span>
+            <span class="veg-toggle-label">Veg</span>
+          </label>
+        </div>
+
+        <!-- Hero Restaurant Banner Card -->
+        <div class="menu-hero-card" id="menuHeroCard">
+          <div class="hero-img-wrap">
+            <img id="menuHeroImg" class="hero-bg-img" src="" alt="Restaurant Banner" onerror="this.src='https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_508,h_320,c_fill/FOOD_CATALOG/IMAGES/CMS/2024/3/9/971fe499-fcb5-4530-b878-c03436738d70_7de95bb6-376b-463a-ac43-2a87bc633851_compressed'" />
+            <div class="hero-img-overlay"></div>
+            <div class="hero-rest-info">
+              <h1 class="hero-rest-name" id="menuRestName">Restaurant</h1>
+              <span class="hero-rating-badge" id="menuRestRating">★ 4.1</span>
+            </div>
+          </div>
+          <div class="hero-floating-outlet-card">
+            <div class="outlet-left">
+              <div class="outlet-icon-box">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v2H4zm0 4h16l-1 12H5L4 8zm3 2v8h2v-8H7zm4 0v8h2v-8h-2zm4 0v8h2v-8h-2z"/></svg>
+              </div>
+              <div class="outlet-text">
+                <div class="outlet-badge">OUTLET • 4 MORE</div>
+                <div class="outlet-location" id="menuOutletLoc">Outlet <span>⌄</span></div>
+              </div>
+            </div>
+            <div class="outlet-right">
+              <div class="outlet-dist" id="menuOutletDist">2.1 KM</div>
+              <div class="outlet-sla" id="menuOutletSla">25-30 mins</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- In-Restaurant Dish Search -->
+        <div class="menu-dish-search-wrap">
+          <svg class="search-glass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;color:#94a3b8;">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input type="text" id="menuDishSearch" placeholder="Search dishes in this restaurant" oninput="filterMenuDishes()" />
+        </div>
+
+        <!-- Menu Categories & Dishes Container -->
+        <div id="menuItemsList" class="menu-items-box">
+          <div class="loading-state">Loading menu items from Swiggy...</div>
+        </div>
+
+      </section>
+
+      <!-- ================= 4. CART & CHECKOUT VIEW (1:1 TOING BOT) ================= -->
+      <section id="tab-cart" class="view-panel">
+        
+        <!-- Cart Empty State -->
+        <div id="cartEmptyState" class="empty-hint" style="padding: 40px 16px; background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border-color); text-align: center;">
+          <div style="font-size: 42px; margin-bottom: 10px;">🛒</div>
+          <strong style="font-size: 16px; color: var(--text-main); display: block; margin-bottom: 4px;">Your Cart is Empty</strong>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">Explore delicious dishes from verified restaurants near you!</p>
+          <button class="btn-primary btn-sm" onclick="switchTab('search')" style="margin: 0 auto;">Browse Food</button>
+        </div>
+
+        <!-- Cart Full Content -->
+        <div id="cartContentWrap" class="cart-page-wrap hidden">
+
+          <!-- 1. Delivering to Card -->
+          <div class="cart-address-card" onclick="switchTab('address')">
+            <div class="cart-addr-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            </div>
+            <div class="cart-addr-info">
+              <div class="cart-addr-title" id="cartAddressTitle">Delivering to Home</div>
+              <div class="cart-addr-sub" id="cartAddressSub">Select delivery address</div>
+            </div>
+            <div class="cart-chevron">›</div>
+          </div>
+
+          <!-- 2. Your Order Section -->
+          <div class="cart-order-section">
+            <div class="cart-order-header-row">
+              <span class="cart-sec-title">Your Order</span>
+              <span class="cart-sec-summary" id="cartHeaderSummary">1 item • ₹79</span>
+            </div>
+
+            <div class="cart-order-card">
+              <!-- Restaurant Header Row -->
+              <div class="cart-rest-header-row">
+                <img id="cartRestLogo" class="cart-rest-logo-img" src="/icons/restaurant-placeholder.svg" alt="Restaurant Logo" />
+                <div class="cart-rest-meta">
+                  <div class="cart-rest-name" id="cartRestaurantTitle">Restaurant</div>
+                  <div class="cart-rest-sub-info" id="cartRestSubSla">BHEL • 25-30 mins</div>
+                </div>
+                <button class="cart-clear-btn-circle" onclick="clearCart()" title="Clear cart">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+              </div>
+
+              <!-- Cart Dishes List -->
+              <div id="cartItemsList" class="cart-dishes-list"></div>
+
+              <!-- Add Cooking Request Row -->
+              <div class="cart-cooking-req-row" onclick="openCookingRequestPrompt()">
+                <span>🍴</span>
+                <span id="cookingReqText">Add cooking request</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Apply Coupon Card -->
+          <div class="cart-coupon-card" onclick="toggleCouponSection()">
+            <div class="coupon-icon-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"></rect><line x1="16" y1="7" x2="16" y2="17" stroke-dasharray="2 2"></line></svg>
+            </div>
+            <div class="coupon-card-info">
+              <div class="coupon-card-title" id="couponCardTitle">Apply coupon</div>
+              <div class="coupon-card-sub" id="couponCardSub">See offers for this restaurant</div>
+            </div>
+            <div class="cart-chevron" id="couponChevron">›</div>
+          </div>
+
+          <!-- Collapsible Coupon Drawer -->
+          <div id="cartCouponDrawer" class="cart-coupon-drawer hidden">
+            <div class="coupon-input-row">
+              <input type="text" id="inputCouponCode" placeholder="Enter coupon code" style="text-transform:uppercase" />
+              <button class="btn-coupon-apply" onclick="handleApplyCoupon()">APPLY</button>
+            </div>
+            <div id="couponList" class="coupons-grid"></div>
+          </div>
+
+          <!-- 4. Bill Details Card -->
+          <div class="cart-bill-details-card">
+            <div class="bill-details-header">
+              <div class="bill-title-left">
+                <span style="font-size:16px;">🧾</span>
+                <span class="bill-title-txt">Bill Details</span>
+              </div>
+              <div class="bill-title-right">
+                <button class="btn-claim-fc-pill" onclick="claimFoodCoinDiscount()">
+                  <span class="fc-bolt">⚡</span>
+                  <span id="claimFcBtnText">Claim ₹50 FC</span>
+                </button>
+                <button class="btn-bill-refresh" onclick="refreshBillDetails()" title="Refresh bill">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="bill-items-table">
+              <div class="bill-data-row">
+                <span class="bill-row-label">Item Total</span>
+                <span class="bill-row-val">
+                  <span id="billOrigItemTotal" class="strikethrough-gray"></span>
+                  <span id="billItemTotal">₹0</span>
+                </span>
+              </div>
+              <div class="bill-data-row">
+                <span class="bill-row-label" id="billDeliveryLabel">Delivery Fee 2.1 kms</span>
+                <span class="bill-row-val" id="billDeliveryFee">₹25</span>
+              </div>
+              <div class="bill-data-row">
+                <span class="bill-row-label">Quick Mode</span>
+                <span class="bill-row-val">
+                  <span class="strikethrough-gray">₹5</span>
+                  <span class="text-green-bold">FREE</span>
+                </span>
+              </div>
+              <div class="bill-data-row">
+                <span class="bill-row-label">Government Taxes</span>
+                <span class="bill-row-val" id="billTaxes">₹5.2</span>
+              </div>
+              <div class="bill-data-row discount-row" id="billDiscountRow" style="display:none;">
+                <span class="bill-row-label">Coupon Discount (<span id="appliedCouponTag"></span>)</span>
+                <span class="bill-row-val text-green-bold" id="billDiscount">-₹0</span>
+              </div>
+              <div class="bill-data-row discount-row" id="billFcDiscountRow" style="display:none;">
+                <span class="bill-row-label">Food Coin Claim</span>
+                <span class="bill-row-val text-green-bold" id="billFcDiscount">-₹50</span>
+              </div>
+            </div>
+
+            <div class="bill-dashed-divider"></div>
+
+            <div class="bill-to-pay-row">
+              <span class="to-pay-label">To Pay</span>
+              <span class="to-pay-val" id="billGrandTotal">₹0</span>
+            </div>
+          </div>
+
+          <!-- 5. Payment Method Card -->
+          <div class="cart-payment-method-card">
+            <div class="payment-card-header">
+              <span style="font-size:16px;">💳</span>
+              <span class="pay-title-txt">Payment Method</span>
+            </div>
+
+            <div class="pay-methods-list">
+              <!-- UPI / QR Option (Selected) -->
+              <div class="pay-opt-box selected" id="optPayUPI" onclick="setCartPaymentMethod('UPIIntent')">
+                <div class="pay-opt-icon-wrap">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                </div>
+                <div class="pay-opt-info">
+                  <div class="pay-opt-name">UPI / QR</div>
+                  <div class="pay-opt-desc">Pay with any payment apps</div>
+                </div>
+                <div class="pay-opt-check" id="checkPayUPI">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#10b981"><circle cx="12" cy="12" r="10"></circle><polyline points="8 12 11 15 16 9" stroke="#fff" stroke-width="2.5" fill="none"></polyline></svg>
+                </div>
+              </div>
+
+              <!-- Cash on Delivery Option (Disabled) -->
+              <div class="pay-opt-box disabled" id="optPayCOD">
+                <div class="pay-opt-icon-wrap">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                </div>
+                <div class="pay-opt-info">
+                  <div class="pay-opt-name" style="color:var(--text-muted);">Cash on Delivery</div>
+                  <div class="pay-opt-badge-soon">Adding soon</div>
+                </div>
+                <div class="pay-opt-radio-empty"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================= 5. ORDERS VIEW ================= -->
+      <section id="tab-orders" class="view-panel">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="title-icon-box">🕒</div>
+              <span>Past Orders</span>
+            </div>
+            <button class="btn-secondary btn-sm" onclick="fetchOrders()">Refresh</button>
+          </div>
+          <div id="ordersList" class="orders-container"></div>
+        </div>
+      </section>
+
+      <!-- ================= 6. BULK VIEW (1:1 TOING BOT SCREENSHOT 1) ================= -->
+      <section id="tab-bulk" class="view-panel">
+        <div class="bulk-page-wrap">
+          
+          <!-- Card 1: Bulk Claim -->
+          <div class="bulk-action-card" onclick="openBulkClaimModal()">
+            <div class="bulk-card-left">
+              <div class="bulk-icon-box purple-bg">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="4" rx="1"></rect><path d="M12 8v13m7-9v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-8"></path><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"></path></svg>
+              </div>
+              <div class="bulk-card-info">
+                <div class="bulk-card-title">Bulk Claim</div>
+                <div class="bulk-card-sub">Claim refer ₹50 free cash</div>
+                <div class="bulk-card-stat" id="bulkClaimableStat">
+                  <span class="bolt-icon">⚡</span>
+                  <span id="bulkClaimableText">1 claimable</span>
+                </div>
+              </div>
+            </div>
+            <div class="bulk-card-right">
+              <div class="bulk-val-col">
+                <div class="bulk-amount">₹50</div>
+                <div class="bulk-unit">per account</div>
+              </div>
+              <div class="bulk-chevron">›</div>
+            </div>
+          </div>
+
+          <!-- Card 2: Bulk Order -->
+          <div class="bulk-action-card" onclick="openBulkOrderModal()">
+            <div class="bulk-card-left">
+              <div class="bulk-icon-box purple-bg">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+              </div>
+              <div class="bulk-card-info">
+                <div class="bulk-card-title">Bulk Order</div>
+                <div class="bulk-card-sub">Order from many accounts at same time</div>
+                <div class="bulk-card-stat" id="bulkFreshStat">
+                  <span class="bolt-icon">⚡</span>
+                  <span id="bulkFreshText">1 fresh accounts</span>
+                </div>
+              </div>
+            </div>
+            <div class="bulk-card-right">
+              <div class="bulk-val-col">
+                <div class="bulk-amount">10</div>
+                <div class="bulk-unit">max at once</div>
+              </div>
+              <div class="bulk-chevron">›</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Floating Cart Bar (for non-cart tabs) -->
+    <div id="floatingCartBar" class="floating-cart-bar hidden" onclick="switchTab('cart')">
+      <div><span id="floatCartCount">0 Items</span> • <span id="floatCartTotal">₹0</span></div>
+      <div style="display:flex; align-items:center; gap:6px;">Buy Now 🛍️ →</div>
+    </div>
+
+    <!-- Cart Sticky Pay Bar (1:1 with Decoders Toing Screenshot - visible on Cart tab) -->
+    <div id="cartStickyPayBar" class="cart-sticky-pay-bar hidden">
+      <div class="sticky-pay-left">
+        <span class="sticky-pay-caption">PAY USING UPI</span>
+        <span class="sticky-pay-price" id="stickyPayAmount">₹0</span>
+      </div>
+      <button id="btnStickyPayOrder" class="btn-sticky-order" onclick="handlePlaceOrder()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+        <span id="stickyPayBtnText">Add order fee</span>
+      </button>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <button class="nav-item" id="nav-accounts" onclick="switchTab('accounts')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+        <span>Accounts</span>
+      </button>
+
+      <button class="nav-item active" id="nav-address" onclick="switchTab('address')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+          <circle cx="12" cy="10" r="3" />
+        </svg>
+        <span>Address</span>
+      </button>
+
+      <button class="nav-item" id="nav-search" onclick="switchTab('search')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <span>Search</span>
+      </button>
+
+      <button class="nav-item" id="nav-cart" onclick="switchTab('cart')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="9" cy="21" r="1" />
+          <circle cx="20" cy="21" r="1" />
+          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+        </svg>
+        <span>Cart</span>
+      </button>
+
+      <button class="nav-item" id="nav-orders" onclick="switchTab('orders')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+        <span>Orders</span>
+      </button>
+
+      <button class="nav-item" id="nav-bulk" onclick="switchTab('bulk')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+        <span>Bulk</span>
+      </button>
+    </nav>
+
+    <footer class="app-watermark">
+      <span>@decoders_toingbot</span>
+    </footer>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Modals -->
+    <!-- Modal Bulk Claim -->
+    <div class="modal-overlay hidden" id="modalBulkClaim">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>🎁 Bulk Claim Referral Reward</h3>
+          <button class="modal-close" onclick="closeModal('modalBulkClaim')">✕</button>
+        </div>
+        <p class="modal-sub">Claim ₹50 free cash across all connected accounts using real Swiggy referral API:</p>
+        <input type="text" id="inputBulkReferCode" placeholder="Enter Swiggy Referral Code (e.g. 5G9P5Q)" class="modal-input" value="5G9P5Q" />
+        <button class="btn-primary" id="btnExecuteBulkClaim" onclick="executeBulkClaim()">Claim ₹50 for All Accounts</button>
+      </div>
+    </div>
+
+    <!-- Modal Bulk Order -->
+    <div class="modal-overlay hidden" id="modalBulkOrder">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>⚡ Bulk Order Multi-Account</h3>
+          <button class="modal-close" onclick="closeModal('modalBulkOrder')">✕</button>
+        </div>
+        <p class="modal-sub">Order from fresh accounts simultaneously (up to 10 max at once):</p>
+        <div id="bulkOrderFreshList" style="margin-bottom:12px; font-size:12.5px; color:var(--text-main);"></div>
+        <button class="btn-primary" id="btnExecuteBulkOrder" onclick="executeBulkOrder()">Place Orders Simultaneously 🚀</button>
+      </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="modalAddLink">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Add Address by Swiggy Link</h3>
+          <button class="modal-close" onclick="closeModal('modalAddLink')">✕</button>
+        </div>
+        <p class="modal-sub">Paste the shared address or track link from Swiggy:</p>
+        <input type="text" id="inputAddressLink" placeholder="https://swiggy.com/... or paste address text" class="modal-input" />
+        <button class="btn-primary" onclick="submitAddLink()">Add Address</button>
+      </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="modalAddManual">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Add Address Manually</h3>
+          <button class="modal-close" onclick="closeModal('modalAddManual')">✕</button>
+        </div>
+        <input type="text" id="manualName" placeholder="Recipient Name (e.g. Aman)" class="modal-input" />
+        <input type="tel" id="manualPhone" placeholder="Mobile Number" class="modal-input" />
+        <input type="text" id="manualLine1" placeholder="Flat, House no., Building, Street" class="modal-input" />
+        <input type="text" id="manualLine2" placeholder="Area, Landmark (e.g. Rajendra Nagar, Kankarbagh)" class="modal-input" />
+        <div style="display:flex; gap:10px;">
+          <input type="text" id="manualCity" placeholder="City (e.g. Patna, Varanasi)" class="modal-input" style="flex:1" />
+          <select id="manualTag" class="modal-input" style="flex:1">
+            <option value="OTHER">OTHER</option>
+            <option value="HOME">HOME</option>
+            <option value="WORK">WORK</option>
+            <option value="FRIENDS & FAMILY">FRIENDS & FAMILY</option>
+          </select>
+        </div>
+        <button class="btn-primary" onclick="submitAddManual()">Save Address</button>
+      </div>
+    </div>
+
+    <!-- ========================================================
+         ITEM CUSTOMISATION BOTTOM SHEET MODAL (1:1 TOING BOT)
+         ======================================================== -->
+    <div class="customise-bottom-sheet hidden" id="modalCustomiseDish" onclick="if(event.target===this) closeCustomiseModal()">
+      <div class="customise-sheet-box">
+        <div class="customise-sheet-header">
+          <div class="customise-sheet-title-wrap">
+            <h3 class="customise-dish-title" id="custDishTitle">Dish Name</h3>
+            <span class="customise-dish-base-price" id="custDishBasePrice">Base Price: ₹0</span>
+          </div>
+          <button class="customise-close-btn" onclick="closeCustomiseModal()">✕</button>
+        </div>
+        <div class="customise-sheet-body" id="custSheetBody">
+          <!-- Dynamic Addon Groups -->
+        </div>
+        <div class="customise-sheet-footer">
+          <div class="customise-footer-total">
+            <span class="customise-total-label">TOTAL</span>
+            <span class="customise-total-val" id="custFooterTotal">₹0</span>
+          </div>
+          <button class="customise-add-btn" id="custAddBtn" onclick="confirmCustomiseAddToCart()">
+            <span>Add item</span>
+            <span id="custAddBtnPrice">₹0</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
