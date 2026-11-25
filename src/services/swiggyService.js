@@ -35,6 +35,17 @@ const DEFAULT_PAYMENT_HEADERS = {
 	'accept': 'application/json, */*',
 	'content-type': 'application/json',
 };
+const buildProfileHeaders = (tid = '', token = '', extra = {}) => {
+	const h = {
+		'user-agent': 'Swiggy-Android',
+		'x-channel': 'toing-app',
+		'accept': 'application/json',
+		...extra
+	};
+	if (tid) h['tid'] = tid;
+	if (token) h['token'] = token;
+	return h;
+};
 const buildDiscHeaders = (tid = '', token = '', extra = {}) => {
 	const h = {
 		...DEFAULT_DISC_HEADERS,
@@ -64,13 +75,24 @@ const SwiggyService = {
 		const url = `https://profile.swiggy.com/api/v3/app/sms_otp?mobile=${cleanMobile}`;
 		try {
 			const response = await axios.get(url, {
-				headers: buildDiscHeaders(),
+				headers: buildProfileHeaders(),
 				timeout: 10000,
 			});
+			const data = response.data || {};
+			const tid = data.tid || response.headers['tid'] || '';
+			if (!tid || (data.statusCode !== undefined && data.statusCode !== 0)) {
+				return {
+					success: false,
+					error: data.statusMessage || 'Failed to send OTP. Please try again.',
+					details: data,
+				};
+			}
 			return {
 				success: true,
-				data: response.data,
-				tid: response.data?.tid || response.headers['tid'] || '',
+				data,
+				tid,
+				sid: data.sid || '',
+				deviceId: data.deviceId || '',
 			};
 		} catch (error) {
 			return {
@@ -96,7 +118,9 @@ const SwiggyService = {
 		};
 		try {
 			const response = await axios.post(url, payload, {
-				headers: buildDiscHeaders(initialTid),
+				headers: buildProfileHeaders(initialTid, '', {
+					'content-type': 'application/json; charset=utf-8',
+				}),
 				timeout: 10000,
 			});
 			const data = response.data;
@@ -147,7 +171,7 @@ const SwiggyService = {
 		const url = `https://profile.swiggy.com/api/v4/user/profile`;
 		try {
 			const response = await axios.get(url, {
-				headers: buildDiscHeaders(tid, token),
+				headers: buildProfileHeaders(tid, token),
 				timeout: 10000,
 			});
 			return {
