@@ -477,7 +477,9 @@ const SwiggyService = {
 			const dishMarker = 'swiggy.presentation.food.v2.Dish';
 			let pos = 0;
 			while ((pos = str.indexOf(dishMarker, pos)) !== -1) {
-				const chunk = str.slice(pos, pos + 1200);
+				const nextDishPos = str.indexOf(dishMarker, pos + dishMarker.length);
+				const endPos = nextDishPos !== -1 ? Math.min(nextDishPos, pos + 1800) : pos + 1800;
+				const chunk = str.slice(pos, endPos);
 				const words = chunk.replace(/[\x00-\x1F\x7F-\xFF]+/g, '|').split('|').map((w) => w.trim()).filter((w) => w.length >= 2);
 				const id = (words[1] && /^[0-9]{6,10}$/.test(words[1])) ? words[1] : (chunk.match(/([0-9]{7,10})/)?.[1] || '');
 				const name = (words[2] && !words[2].includes('.jpg') && !words[2].includes('http')) ? words[2] : '';
@@ -506,37 +508,63 @@ const SwiggyService = {
 				const chunkBuf = Buffer.from(chunk, 'latin1');
 				let originalPrice = 0;
 				let price = 0;
-				// 1. Tag 0x15 (float32 price in paise)
-				for (let i = 0; i < chunkBuf.length - 4; i++) {
-					if (chunkBuf[i] === 0x15 && !price) {
-						const val = Math.round(chunkBuf.readFloatLE(i + 1) / 100);
-						if (val >= 20 && val <= 3500) price = val;
+
+				// 1. Primary: Dish protobuf float tags 0x45 (original price) & 0x4D (Toing finalPrice)
+				// Prefer paired 0x45 + 0x4D (5 bytes apart) or standalone 0x4D / 0x45
+				for (let i = 0; i < chunkBuf.length - 9; i++) {
+					if (chunkBuf[i] === 0x45 && chunkBuf[i + 5] === 0x4D) {
+						const vOrig = Math.round(chunkBuf.readFloatLE(i + 1) / 100);
+						const vFinal = Math.round(chunkBuf.readFloatLE(i + 6) / 100);
+						if (vFinal >= 15 && vFinal <= 3500 && vOrig >= vFinal && vOrig <= 5000) {
+							originalPrice = vOrig;
+							price = vFinal;
+							break;
+						}
 					}
 				}
-				// 2. Swiggy final/listing price string match
-				const mFinal = chunk.match(/swiggy_final_price[^\d]+([0-9]{4,6})/);
-				if (mFinal) {
-					const p = Math.round(parseInt(mFinal[1], 10) / 100);
-					if (p >= 20 && p <= 3500) price = p;
-				}
-				const mList = chunk.match(/swiggy_listing_price[^\d]+([0-9]{4,6})/);
-				if (mList) {
-					const op = Math.round(parseInt(mList[1], 10) / 100);
-					if (op >= (price || 20)) originalPrice = op;
-				}
-				// 3. Fallback float tag offsets 0x45 / 0x4D if still not found
+
 				if (!price) {
 					for (let i = 0; i < chunkBuf.length - 4; i++) {
 						const tag = chunkBuf[i];
 						if (tag === 0x4D && !price) {
 							const val = Math.round(chunkBuf.readFloatLE(i + 1) / 100);
-							if (val >= 35 && val <= 2500) price = val;
+							if (val >= 15 && val <= 3500) price = val;
 						} else if (tag === 0x45 && !originalPrice) {
 							const val = Math.round(chunkBuf.readFloatLE(i + 1) / 100);
-							if (val >= 35 && val <= 2500) originalPrice = val;
+							if (val >= 15 && val <= 5000) originalPrice = val;
 						}
 					}
 				}
+
+				// 2. Fallback: Swiggy final/listing price string match (only if 0x4D/0x45 missing)
+				if (!price) {
+					const mFinal = chunk.match(/swiggy_final_price[^\d]+([0-9]{4,6})/);
+					if (mFinal) {
+						const p = Math.round(parseInt(mFinal[1], 10) / 100);
+						if (p >= 15 && p <= 3500) price = p;
+					}
+				}
+				if (!originalPrice) {
+					const mList = chunk.match(/swiggy_listing_price[^\d]+([0-9]{4,6})/);
+					if (mList) {
+						const op = Math.round(parseInt(mList[1], 10) / 100);
+						if (op >= (price || 15)) originalPrice = op;
+					}
+				}
+
+				// 3. Last resort: Tag 0x15 (float32 price in paise)
+				if (!price) {
+					for (let i = 0; i < chunkBuf.length - 4; i++) {
+						if (chunkBuf[i] === 0x15) {
+							const val = Math.round(chunkBuf.readFloatLE(i + 1) / 100);
+							if (val >= 15 && val <= 3500) {
+								price = val;
+								break;
+							}
+						}
+					}
+				}
+
 				if (!price) price = originalPrice || 0;
 				// Only keep originalPrice when the API genuinely reports a higher listing price than final price
 				if (!originalPrice || originalPrice <= price) originalPrice = price;
@@ -803,22 +831,82 @@ const SwiggyService = {
 	/* ==========================================================
 	   5. ORDERS & CHECKOUT (Direct payments.swiggy.com & chkout.swiggy.com)
 	   ========================================================== */
-	// Place Order (from pay_toing.har)
-	async placeOrder(orderPayload, tid = '', token = '', userId = '') {
-		const url = `https://payments.swiggy.com/api/v3/order/place`;
+	// Get Payment Options (from pay_toing.har)
+	async getPaymentOptions(amount, tid = '', token = '', userId = '') {
+		const url = `https://payments.swiggy.com/api/v3/payment/get-payment-options`;
 		try {
-			const response = await axios.post(url, orderPayload, {
+			const response = await axios.post(url, {
+				amount: Number(amount || 0),
+				cart_type: 'REGULAR',
+			}, {
+				headers: buildPaymentHeaders(tid, token, userId),
+				timeout: 10000,
+			});
+			return { success: true, data: response.data };
+		} catch (error) {
+			return { success: false, error: error.response?.data || error.message };
+		}
+	},
+	// Place Order (1:1 pay_toing.har)
+	async placeOrder(orderData, tid = '', token = '', userId = '') {
+		const url = `https://payments.swiggy.com/api/v3/order/place`;
+		const amount = Number(orderData.transaction_amount || 0);
+		const isUpiCollect = Boolean(orderData.upiVpa);
+		const payload = {
+			upi_transaction_info: isUpiCollect
+				? { payer_vpa: String(orderData.upiVpa).trim(), save_vpa: false }
+				: {
+					intent_app: 'com.google.android.apps.nbu.paisa.user',
+					transaction_mode: '',
+					intent_app_display_name: 'Google Pay',
+				},
+			force_validate_coupon: false,
+			transaction_amount: amount,
+			selected_split_pay_amounts: {},
+			twid_rewards_meta: {},
+			place_order_source: 'payment',
+			lat: String(orderData.lat || '25.6074'),
+			lng: String(orderData.lng || '85.1587'),
+			addressId: String(orderData.addressId || ''),
+			paymentMethod: isUpiCollect ? 'UPI' : (orderData.paymentMethod || 'UPIIntent'),
+			useJuspayNative: !isUpiCollect,
+			paymentReturnUrl: '',
+			orderComments: String(orderData.cookingRequest || ''),
+			paymentAmount: String(amount),
+			address_id: String(orderData.addressId || ''),
+			payment_cod_method: isUpiCollect ? 'UPI' : 'UPIIntent',
+			order_comments: String(orderData.cookingRequest || ''),
+		};
+		try {
+			const response = await axios.post(url, payload, {
 				headers: buildPaymentHeaders(tid, token, userId),
 				timeout: 15000,
 			});
+			const d = response.data || {};
+			const od = d.data?.order_data || {};
+			const orderId = od.order_id ? String(od.order_id) : '';
+			const paasId = String(
+				od.payment_txn_id ||
+				od.payment_info_v2?.payment_transactions?.[0]?.marketplace_reference_id ||
+				od.targeted_marketplace_payment_reference_id ||
+				''
+			);
+			const rawStr = JSON.stringify(d);
+			const upiMatch = rawStr.match(/upi:\/\/pay\?[^"\\]+/);
 			return {
-				success: true,
-				data: response.data
+				success: d.statusCode === 0 && Boolean(orderId),
+				statusCode: d.statusCode,
+				statusMessage: d.statusMessage || '',
+				orderId,
+				paasId,
+				amount: od.order_total || amount,
+				upiUri: upiMatch ? upiMatch[0] : '',
+				data: d,
 			};
 		} catch (error) {
 			return {
 				success: false,
-				error: error.response?.data || error.message
+				error: error.response?.data?.statusMessage || error.response?.data || error.message,
 			};
 		}
 	},
@@ -831,32 +919,34 @@ const SwiggyService = {
 				timeout: 10000,
 			});
 			return {
-				success: true,
-				data: response.data
+				success: response.data?.statusCode === 0,
+				data: response.data,
 			};
 		} catch (error) {
 			return {
 				success: false,
-				error: error.response?.data || error.message
+				error: error.response?.data?.statusMessage || error.response?.data || error.message,
 			};
 		}
 	},
-	// Check UPI Transaction Status (from pay_toing.har)
-	async getVpaTxnStatus(orderId, paasId = '', paymentCode = 'UPIIntent', tid = '', token = '') {
-		const url = `https://payments.swiggy.com/api/v3/vpa-txn-status?order_id=${orderId}&paas_id=${paasId}&payment_code=${paymentCode}`;
+	// Check UPI Transaction Status (1:1 pay_toing.har)
+	async getVpaTxnStatus(paasId = '', paymentCode = 'UPIIntent', tid = '', token = '', userId = '') {
+		const url = `https://payments.swiggy.com/api/v3/vpa-txn-status?paas_id=${encodeURIComponent(paasId)}&payment_code=${encodeURIComponent(paymentCode || 'UPIIntent')}`;
 		try {
 			const response = await axios.get(url, {
-				headers: buildPaymentHeaders(tid, token),
+				headers: buildPaymentHeaders(tid, token, userId),
 				timeout: 10000,
 			});
 			return {
 				success: true,
-				data: response.data
+				status: String(response.data?.data || 'pending').toLowerCase(),
+				data: response.data,
 			};
 		} catch (error) {
 			return {
 				success: false,
-				error: error.response?.data || error.message
+				status: 'error',
+				error: error.response?.data?.statusMessage || error.response?.data || error.message,
 			};
 		}
 	},

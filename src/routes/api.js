@@ -858,11 +858,14 @@ router.get('/orders', async (req, res) => {
 							const tgUserId = getTgUserId(req);
 							const {
 								items,
+								restaurantId,
 								restaurantName,
 								total,
 								address,
 								couponCode,
-								paymentMethod
+								paymentMethod,
+								upiVpa,
+								cookingRequest
 							} = req.body;
 							const {
 								active,
@@ -870,44 +873,97 @@ router.get('/orders', async (req, res) => {
 								token,
 								userId
 							} = await getActiveCreds(tgUserId);
-							const orderId = '252' + Math.floor(100000000000 + Math.random() * 900000000000);
+
+							if (!tid || !token) {
+								return res.status(401).json({
+									success: false,
+									error: 'Please login to an account first before placing a real order.',
+								});
+							}
+
 							const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
-							const deliveryAddress = address || selected?.address_line1 || 'Delivery Address';
+							if (!selected) {
+								return res.status(400).json({
+									success: false,
+									error: 'Please select a delivery address first.',
+								});
+							}
+
+							const lat = selected.lat || 25.6074;
+							const lng = selected.lng || 85.1587;
+							const addressId = selected.id || active?.selectedAddressId || '';
+							const deliveryAddress = address || [selected.flat_no, selected.address, selected.address_line1].filter(Boolean).join(', ') || 'Delivery Address';
+
+							// Step 1: Sync cart with Swiggy Payments (/api/v3/update-cart)
+							const cartPayload = {
+								address_nudge_check: false,
+								batch_opt_in: false,
+								cartLatLong: { lat: Number(lat), lng: Number(lng) },
+								cart_saved_preferences: { is_cutlery_opted: 'false' },
+								cutleryComments: String(cookingRequest || ''),
+								address_id: String(addressId),
+								restaurantId: String(restaurantId || ''),
+								cartItems: (items || []).map((i) => ({
+									menu_item_id: String(i.baseId || i.id),
+									quantity: Number(i.quantity || 1),
+									addons: i.addons || [],
+									variants: i.variants || [],
+									cost: Math.round(Number(i.price || 0) * 100),
+								})),
+							};
+							await SwiggyService.updateCart(cartPayload, tid, token, userId);
+
+							// Step 2: Apply coupon on Swiggy if provided
+							if (couponCode) {
+								await SwiggyService.applyCoupon(couponCode, tid, token, userId);
+							}
+
+							// Step 3: Place order on Swiggy Payments (/api/v3/order/place)
+							const placeRes = await SwiggyService.placeOrder({
+								paymentMethod: paymentMethod || 'UPIIntent',
+								upiVpa: upiVpa || '',
+								transaction_amount: total,
+								addressId,
+								lat,
+								lng,
+								cookingRequest: cookingRequest || '',
+							}, tid, token, userId);
+
+							if (!placeRes.success || !placeRes.orderId) {
+								return res.status(400).json({
+									success: false,
+									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || 'Swiggy rejected order placement. Please verify cart items & session.',
+									details: placeRes.data || placeRes.error,
+								});
+							}
+
 							const newOrder = {
-								order_id: String(orderId),
+								order_id: String(placeRes.orderId),
+								paas_id: String(placeRes.paasId || ''),
 								restaurant_name: restaurantName || 'Toing Pro Restaurant',
-								order_total: String(total || '99'),
-								order_status: 'PREPARING',
+								order_total: String(placeRes.amount || total || '0'),
+								order_status: 'PAYMENT_PENDING',
 								delivery_address: deliveryAddress,
 								order_time: 'Just now',
-								payment_method: paymentMethod || 'UPIIntent',
+								payment_method: upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent'),
 								items: (items || []).map((i) => ({
 									name: i.name,
 									quantity: i.quantity || 1,
-									cost: (i.price || 99) * 100,
+									cost: Math.round(Number(i.price || 0) * 100),
 								})),
 								coupon_applied: couponCode || '',
 							};
+
 							getUserPlacedOrders(tgUserId).unshift(newOrder);
-							// Call live placeOrder on Swiggy Payments
-							if (tid) {
-								try {
-									await SwiggyService.placeOrder({
-										order_id: orderId,
-										paymentMethod: paymentMethod || 'UPIIntent',
-										transaction_amount: total,
-										addressId: active?.selectedAddressId || 'dblibes1d96k6181v3m0',
-										cart: {
-											items,
-											total
-										},
-									}, tid, token, userId);
-								} catch (e) {}
-							}
+
 							res.json({
 								success: true,
-								order_id: orderId,
-								message: 'Order Placed Successfully on Toing!',
+								order_id: newOrder.order_id,
+								paas_id: newOrder.paas_id,
+								amount: newOrder.order_total,
+								upi_uri: placeRes.upiUri || '',
+								payment_code: upiVpa ? 'UPI' : 'UPIIntent',
+								message: 'Order initiated! Complete UPI payment to confirm.',
 								order: newOrder,
 							});
 						} catch (err) {
@@ -919,6 +975,7 @@ router.get('/orders', async (req, res) => {
 					});
 					router.post('/orders/confirm', async (req, res) => {
 						try {
+							const tgUserId = getTgUserId(req);
 							const {
 								orderId
 							} = req.body;
@@ -926,8 +983,12 @@ router.get('/orders', async (req, res) => {
 								tid,
 								token,
 								userId
-							} = await getActiveCreds(getTgUserId(req));
+							} = await getActiveCreds(tgUserId);
 							const result = await SwiggyService.confirmOrder(orderId, tid, token, userId);
+							if (result.success) {
+								const ord = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(orderId));
+								if (ord) ord.order_status = 'CONFIRMED';
+							}
 							res.json(result);
 						} catch (err) {
 							res.status(500).json({
@@ -939,15 +1000,15 @@ router.get('/orders', async (req, res) => {
 					router.get('/orders/vpa-status', async (req, res) => {
 						try {
 							const {
-								orderId,
 								paasId,
 								paymentCode
 							} = req.query;
 							const {
 								tid,
-								token
+								token,
+								userId
 							} = await getActiveCreds(getTgUserId(req));
-							const result = await SwiggyService.getVpaTxnStatus(orderId, paasId, paymentCode, tid, token);
+							const result = await SwiggyService.getVpaTxnStatus(paasId, paymentCode || 'UPIIntent', tid, token, userId);
 							res.json(result);
 						} catch (err) {
 							res.status(500).json({

@@ -569,17 +569,41 @@ function renderAddressesList() {
   let html = '';
   state.addresses.forEach((addr) => {
     const isSelected = addr.id === state.selectedAddressId;
-    const tag = (addr.tag || 'OTHER').toUpperCase();
+    const rawTag = addr.tag || addr.annotation || (Array.isArray(addr.tags) && addr.tags[0]) || 'OTHER';
+    const tag = String(rawTag).toUpperCase();
     const isHome = tag === 'HOME';
-    const name = addr.name || (state.activeAccount ? (state.activeAccount.userName || 'Suman Kumar') : 'Suman Kumar');
-    const phone = addr.phone || (state.activeAccount ? '+91 ' + state.activeAccount.phone : '+91 6299974421');
-    const fullText = [
-      tag,
-      addr.address_line1 || '',
-      addr.address_line2 || '',
-      addr.city || '',
-      'India'
-    ].filter(Boolean).join(', ');
+    const name = (addr.name || (state.activeAccount ? (state.activeAccount.userName || 'User') : 'User')).trim();
+    const rawPhone = String(addr.phone || addr.mobile || (state.activeAccount ? state.activeAccount.phone : '')).trim();
+    const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone.replace(/^91/, '')}`) : '';
+
+    // Build full detailed address from both Swiggy raw login schema (flat_no, landmark, address, area, city) and manual schema
+    const parts = [];
+    const seenParts = new Set();
+    const pushPart = (val) => {
+      const s = String(val || '').trim();
+      if (!s) return;
+      const low = s.toLowerCase();
+      if (seenParts.has(low)) return;
+      seenParts.add(low);
+      parts.push(s);
+    };
+    pushPart(addr.flat_no);
+    pushPart(addr.landmark);
+    pushPart(addr.address_line1);
+    pushPart(addr.address_line2);
+    if (addr.address && !parts.some((p) => addr.address.toLowerCase().includes(p.toLowerCase()))) {
+      pushPart(addr.address);
+    } else if (!addr.address_line1 && addr.address) {
+      pushPart(addr.address);
+    }
+    if (parts.length === 0) {
+      pushPart(addr.area);
+      pushPart(addr.city);
+      pushPart('India');
+    } else if (addr.city && !parts.join(' ').toLowerCase().includes(addr.city.toLowerCase())) {
+      pushPart(addr.city);
+    }
+    const fullText = parts.join(', ');
 
     html += `
       <div class="addr-card-item ${isSelected ? 'is-selected' : ''}" onclick="selectDeliveryAddress('${addr.id}')">
@@ -1674,6 +1698,7 @@ async function handlePlaceOrder() {
   const fcDiscount = state.cart.fcClaimed ? 50 : 0;
   const total = Math.max(0, Math.round(itemTotal + deliveryFee + taxes - (state.cart.discount || 0) - fcDiscount));
   const payMethod = state.cart.paymentMethod || 'UPIIntent';
+  const upiVpa = (document.getElementById('inputUpiVpa')?.value || '').trim();
 
   try {
     const res = await fetch('/api/orders/place', {
@@ -1681,39 +1706,32 @@ async function handlePlaceOrder() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         items,
+        restaurantId: state.cart.restaurantId,
         restaurantName: state.cart.restaurantName,
         total,
         address: state.selectedAddress?.address || state.selectedAddress?.address_line1 || 'Delivery Address',
         couponCode: state.cart.couponCode,
-        paymentMethod: payMethod,
+        paymentMethod: upiVpa ? 'UPI' : payMethod,
+        upiVpa,
         cookingRequest: state.cart.cookingRequest || '',
       }),
     });
 
     const data = await res.json();
-    if (data.success) {
-      showToast(`🎉 Order Placed! ID: #${data.order_id}`);
-      state.cart.items = {};
-      state.cart.restaurantId = null;
-      state.cart.restaurantName = '';
-      state.cart.restaurantArea = '';
-      state.cart.restaurantSla = '';
-      state.cart.restaurantDistance = '';
-      state.cart.restaurantImage = '';
-      state.cart.couponCode = '';
-      state.cart.discount = 0;
-      state.cart.cookingRequest = '';
-      state.cart.fcClaimed = false;
-      updateFloatingCartBar();
-      updateCartView();
-      switchTab('orders');
+    if (data.success && data.order_id) {
+      openPaymentFlowModal({
+        orderId: data.order_id,
+        paasId: data.paas_id || '',
+        amount: data.amount || total,
+        upiUri: data.upi_uri || '',
+        paymentCode: data.payment_code || 'UPIIntent',
+        upiVpa,
+      });
     } else {
-      showToast('Order placed successfully!');
-      switchTab('orders');
+      showToast(data.error || 'Failed to initiate payment on Swiggy', true);
     }
   } catch (e) {
-    showToast('Order placed! Redirecting to tracking...');
-    switchTab('orders');
+    showToast('Network error while initiating payment', true);
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -1726,6 +1744,143 @@ async function handlePlaceOrder() {
         <span>Add order fee</span>
       `;
     }
+  }
+}
+
+let paymentPollTimer = null;
+
+function clearCartAfterOrder() {
+  state.cart.items = {};
+  state.cart.restaurantId = null;
+  state.cart.restaurantName = '';
+  state.cart.restaurantArea = '';
+  state.cart.restaurantSla = '';
+  state.cart.restaurantDistance = '';
+  state.cart.restaurantImage = '';
+  state.cart.couponCode = '';
+  state.cart.discount = 0;
+  state.cart.cookingRequest = '';
+  state.cart.fcClaimed = false;
+  state.ordersCache = null;
+  updateFloatingCartBar();
+  updateCartView();
+}
+
+function cancelPaymentFlow() {
+  if (paymentPollTimer) {
+    clearInterval(paymentPollTimer);
+    paymentPollTimer = null;
+  }
+  closeModal('modalPaymentFlow');
+}
+
+function openPaymentFlowModal(info) {
+  const modal = document.getElementById('modalPaymentFlow');
+  const body = document.getElementById('paymentModalBody');
+  if (!modal || !body) return;
+
+  const { orderId, paasId, amount, upiUri, paymentCode, upiVpa } = info;
+  body.innerHTML = `
+    <div style="background:var(--input-bg); border:1px solid var(--border-color); border-radius:12px; padding:12px; margin-bottom:12px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+        <span style="color:var(--text-muted); font-size:12px;">Order ID</span>
+        <span style="font-weight:700;">#${orderId}</span>
+      </div>
+      ${paasId ? `<div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span style="color:var(--text-muted); font-size:12px;">Transaction ID</span><span style="font-weight:600; font-size:12px;">${paasId}</span></div>` : ''}
+      <div style="display:flex; justify-content:space-between; font-size:15px; font-weight:800; margin-top:6px;">
+        <span>Amount Payable</span>
+        <span style="color:var(--primary);">₹${amount}</span>
+      </div>
+    </div>
+
+    ${upiVpa ? `<div style="background:rgba(16,185,129,0.1); color:#047857; padding:9px 12px; border-radius:10px; font-size:12.5px; font-weight:600; margin-bottom:12px;">📲 UPI Collect request sent to <strong>${upiVpa}</strong>. Please approve in your UPI app!</div>` : ''}
+    ${upiUri ? `<a href="${upiUri}" class="btn-primary" style="text-decoration:none; margin-bottom:10px;">🚀 Open UPI App & Pay ₹${amount}</a>` : ''}
+
+    <div id="vpaLiveStatusBox" class="skeleton-spinner-row" style="padding:10px 0;">
+      <div class="mini-spinner"></div>
+      <span>Waiting for UPI payment confirmation...</span>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <button class="btn-primary" id="btnManualConfirmPay" style="flex:1;" onclick="checkAndConfirmPayment('${orderId}', '${paasId}', '${paymentCode}')">Check & Confirm</button>
+      <button class="btn-secondary" style="padding:12px 16px;" onclick="cancelPaymentFlow()">Cancel</button>
+    </div>
+  `;
+  modal.classList.remove('hidden');
+
+  if (paymentPollTimer) clearInterval(paymentPollTimer);
+  let attempts = 0;
+  paymentPollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > 40) {
+      clearInterval(paymentPollTimer);
+      paymentPollTimer = null;
+      return;
+    }
+    await checkAndConfirmPayment(orderId, paasId, paymentCode, true);
+  }, 3000);
+}
+
+async function checkAndConfirmPayment(orderId, paasId, paymentCode = 'UPIIntent', isAuto = false) {
+  const statusBox = document.getElementById('vpaLiveStatusBox');
+  try {
+    if (paasId) {
+      const stRes = await fetch(`/api/orders/vpa-status?paasId=${encodeURIComponent(paasId)}&paymentCode=${encodeURIComponent(paymentCode)}`);
+      const stData = await stRes.json();
+      const st = String(stData.status || '').toLowerCase();
+
+      if (st === 'success') {
+        if (paymentPollTimer) {
+          clearInterval(paymentPollTimer);
+          paymentPollTimer = null;
+        }
+        if (statusBox) statusBox.innerHTML = '<span style="color:#16a34a; font-weight:800;">✅ Payment Verified! Confirming order...</span>';
+        const cfRes = await fetch('/api/orders/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId }),
+        });
+        const cfData = await cfRes.json();
+        showToast(cfData.success ? `🎉 Order #${orderId} Confirmed!` : `Order #${orderId} placed!`);
+        clearCartAfterOrder();
+        closeModal('modalPaymentFlow');
+        switchTab('orders');
+        fetchOrders();
+        return;
+      } else if (st === 'failed' || st === 'failure') {
+        if (paymentPollTimer) {
+          clearInterval(paymentPollTimer);
+          paymentPollTimer = null;
+        }
+        if (statusBox) statusBox.innerHTML = '<span style="color:#dc2626; font-weight:700;">❌ Payment failed or declined.</span>';
+        return;
+      } else if (!isAuto) {
+        showToast('Payment still pending. Please approve in UPI app.');
+      }
+    } else if (!isAuto) {
+      // No paasId returned; try direct order/confirm
+      const cfRes = await fetch('/api/orders/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      });
+      const cfData = await cfRes.json();
+      if (cfData.success) {
+        if (paymentPollTimer) {
+          clearInterval(paymentPollTimer);
+          paymentPollTimer = null;
+        }
+        showToast(`🎉 Order #${orderId} Confirmed!`);
+        clearCartAfterOrder();
+        closeModal('modalPaymentFlow');
+        switchTab('orders');
+        fetchOrders();
+      } else {
+        showToast(cfData.error || 'Payment not confirmed yet', true);
+      }
+    }
+  } catch (e) {
+    if (!isAuto) showToast('Error checking payment status', true);
   }
 }
 
@@ -1789,26 +1944,62 @@ async function openOrderDetails(orderId) {
 
     const status = (track.order_status || ord.order_status || cached?.order_status || 'PREPARING').toUpperCase();
     const restName = ord.restaurant_name || cached?.restaurant_name || 'Restaurant';
-    const total = ord.order_total || cached?.order_total || '0';
-    const address = ord.delivery_address?.address || ord.delivery_address || cached?.delivery_address || 'Delivery Address';
+    const restLocality = ord.restaurant_locality || '';
+    const orderTime = ord.order_time || cached?.order_time || '';
+    const total = Number(ord.order_total ?? ord.net_total ?? cached?.order_total ?? 0);
     const items = ord.order_items || ord.items || cached?.items || [];
     const statusMsg = track.message || track.statusMessage || data.trackData?.statusMessage || '';
 
+    // Extract full Bill Details from Swiggy getSingleOrder response
+    const charges = ord.charges || {};
+    const itemTotal = Number(ord.item_total || items.reduce((s, it) => s + Number(it.sub_total || it.item_total || (it.cost ? it.cost / 100 : 0)), 0) || total);
+    const deliveryFee = Number(ord.delivery_charges ?? charges['Total Delivery Fees'] ?? charges['Delivery Charges'] ?? 0);
+    const packingFee = Number(charges['Packing Charges'] || 0) + Number(charges['Convenience Fee'] || 0) + Number(charges['Service Charges'] || 0);
+    const taxes = Number(ord.order_tax ?? charges['GST'] ?? 0);
+    const totalDiscount = Math.max(0, Number(ord.order_discount || 0) + Number(ord.coupon_discount || 0) + Number(ord.trade_discount || 0) + Number(ord.payment_offer_instant_discount || 0));
+    const computedDiffDiscount = (!totalDiscount && itemTotal + deliveryFee + packingFee + taxes > total)
+      ? Math.round((itemTotal + deliveryFee + packingFee + taxes - total) * 100) / 100
+      : totalDiscount;
+    const payMethod = ord.payment_method || ord.payment_method_involved || cached?.payment_method || 'UPI / Online';
+
+    // Full Delivery Address
+    const da = ord.delivery_address;
+    const addrLine = (da && typeof da === 'object')
+      ? [da.name ? `${da.name}${da.mobile ? ' | +91 ' + da.mobile : ''}` : '', [da.flat_no, da.landmark, da.address || da.address_line1].filter(Boolean).join(', ')].filter(Boolean).join('<br>')
+      : (da || cached?.delivery_address || 'Delivery Address');
+
     body.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <span style="font-weight:800; font-size:15px;">${restName}</span>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
+        <div>
+          <div style="font-weight:800; font-size:15px;">${restName}</div>
+          ${restLocality || orderTime ? `<div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${[restLocality, orderTime].filter(Boolean).join(' • ')}</div>` : ''}
+        </div>
         <span class="badge-tag tag-account">${status}</span>
       </div>
-      ${statusMsg ? `<div style="background:rgba(124,58,237,0.08); color:var(--primary); padding:8px 10px; border-radius:8px; font-weight:600; margin-bottom:10px;">🛵 ${statusMsg}</div>` : ''}
+      ${statusMsg ? `<div style="background:rgba(99,102,241,0.1); color:var(--primary); padding:8px 10px; border-radius:8px; font-weight:600; margin-bottom:10px;">🛵 ${statusMsg}</div>` : ''}
+
       <div style="border-top:1px solid var(--border-color); padding-top:8px; margin-bottom:10px;">
-        <div style="font-weight:700; margin-bottom:4px; color:var(--text-muted); font-size:11.5px;">ITEMS</div>
-        ${items.length ? items.map((it) => `<div style="display:flex; justify-content:space-between; margin:3px 0;"><span>${it.name} × ${it.quantity || 1}</span><span>₹${it.cost ? Math.round(it.cost / 100) : (it.sub_total || '')}</span></div>`).join('') : '<div>No item breakdown available</div>'}
+        <div style="font-weight:700; margin-bottom:5px; color:var(--text-muted); font-size:11px; letter-spacing:0.5px;">ITEMS ORDERED</div>
+        ${items.length ? items.map((it) => {
+          const itPrice = it.sub_total || it.item_total || it.final_price || (it.cost ? Math.round(it.cost / 100) : '');
+          return `<div style="display:flex; justify-content:space-between; margin:4px 0; font-weight:600;"><span>${it.name} × ${it.quantity || 1}</span><span>${itPrice !== '' ? '₹' + itPrice : ''}</span></div>`;
+        }).join('') : '<div style="color:var(--text-muted);">No item breakdown available</div>'}
       </div>
-      <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; border-top:1px solid var(--border-color); padding-top:8px; margin-bottom:10px;">
-        <span>Total Paid</span>
-        <span>₹${total}</span>
+
+      <div style="background:var(--input-bg); border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; margin-bottom:10px;">
+        <div style="font-weight:700; margin-bottom:6px; color:var(--text-muted); font-size:11px; letter-spacing:0.5px;">BILL DETAILS</div>
+        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Item Total</span><span>₹${itemTotal}</span></div>
+        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Delivery Fee</span><span style="color:${deliveryFee === 0 ? '#16a34a' : 'inherit'}; font-weight:600;">${deliveryFee === 0 ? 'FREE' : '₹' + deliveryFee}</span></div>
+        ${packingFee > 0 ? `<div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Packing & Platform Fee</span><span>₹${packingFee}</span></div>` : ''}
+        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Taxes & GST</span><span>₹${taxes}</span></div>
+        ${computedDiffDiscount > 0 ? `<div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px; color:#16a34a; font-weight:700;"><span>Discount / Savings${ord.coupon_applied ? ' (' + ord.coupon_applied + ')' : ''}</span><span>-₹${computedDiffDiscount}</span></div>` : ''}
+        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; border-top:1px dashed var(--border-color); padding-top:7px; margin-top:6px;">
+          <span>Total Paid (${payMethod})</span>
+          <span>₹${total}</span>
+        </div>
       </div>
-      <div style="font-size:12px; color:var(--text-muted);">📍 ${address}</div>
+
+      <div style="font-size:12px; color:var(--text-muted); line-height:1.45;">📍 ${addrLine}</div>
     `;
   } catch (e) {
     body.innerHTML = `<div class="empty-hint">Could not fetch live details for Order #${orderId}.</div>`;

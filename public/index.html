@@ -3712,6 +3712,10 @@ button svg {
                 </div>
               </div>
 
+              <div style="margin-top:8px;">
+                <input type="text" id="inputUpiVpa" class="modal-input" style="margin-bottom:0; font-size:13px;" placeholder="Optional: Enter UPI ID (e.g. number@ybl) for Collect Request" autocomplete="off" />
+              </div>
+
               <!-- Cash on Delivery Option (Disabled) -->
               <div class="pay-opt-box disabled" id="optPayCOD">
                 <div class="pay-opt-icon-wrap">
@@ -3932,6 +3936,17 @@ button svg {
           </select>
         </div>
         <button class="btn-primary" onclick="submitAddManual()">Save Address</button>
+      </div>
+    </div>
+
+    <!-- Modal Live UPI Payment & Confirmation -->
+    <div class="modal-overlay hidden" id="modalPaymentFlow">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>💳 Complete UPI Payment</h3>
+          <button class="modal-close" onclick="cancelPaymentFlow()">✕</button>
+        </div>
+        <div id="paymentModalBody" style="font-size:13px; color:var(--text-main);"></div>
       </div>
     </div>
 
