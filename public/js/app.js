@@ -592,6 +592,8 @@ function renderAddressesList() {
 async function selectDeliveryAddress(addressId) {
   state.selectedAddressId = addressId;
   state.selectedAddress = state.addresses.find((a) => a.id === addressId);
+  state.lastRestaurants = [];
+  state.currentMenu = null;
   updateDeliveryBanner();
   renderAddressesList();
 
@@ -602,6 +604,9 @@ async function selectDeliveryAddress(addressId) {
       body: JSON.stringify({ addressId }),
     });
     showToast(`📍 Delivering to: ${state.selectedAddress?.name || 'Selected Address'}`);
+    if (state.activeTab === 'search') {
+      performSearch();
+    }
   } catch (e) {}
 }
 
@@ -740,7 +745,7 @@ async function performSearch() {
         <div class="restaurant-card ${isClosed ? 'is-closed-card' : ''}" onclick="selectRestaurant('${r.id}')">
           <div class="rest-left">
             <div class="rest-img-wrapper">
-              ${r.imageUrl ? `<img class="${imgClass}" src="${r.imageUrl}" alt="${r.name}" onerror="if(!this.dataset.retried){this.dataset.retried='1'; this.src=this.src.replace('media-assets.swiggy.com', 'toing-media-assets.swiggy.com');}" />` : `<div class="${imgClass} rest-img-placeholder">🍽️</div>`}
+              ${r.imageUrl ? `<img class="${imgClass}" loading="lazy" decoding="async" src="${r.imageUrl}" alt="${r.name}" onerror="if(!this.dataset.retried){this.dataset.retried='1'; this.src=this.src.replace('media-assets.swiggy.com', 'toing-media-assets.swiggy.com');}" />` : `<div class="${imgClass} rest-img-placeholder">🍽️</div>`}
               ${isClosed ? '<div class="closed-overlay-badge">CLOSED</div>' : ''}
             </div>
             <div class="rest-details">
