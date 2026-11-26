@@ -653,6 +653,8 @@ async function submitAddLink() {
       showToast('Address added!');
       closeModal('modalAddLink');
       document.getElementById('inputAddressLink').value = '';
+      state.lastRestaurants = [];
+      state.currentMenu = null;
       loadAddresses();
     } else {
       showToast(data.error || 'Failed to add address', true);
@@ -685,6 +687,8 @@ async function submitAddManual() {
     if (data.success) {
       showToast('Address saved!');
       closeModal('modalAddManual');
+      state.lastRestaurants = [];
+      state.currentMenu = null;
       loadAddresses();
     } else {
       showToast(data.error || 'Failed to save address', true);

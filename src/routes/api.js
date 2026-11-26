@@ -1,7 +1,27 @@
 const express = require('express');
+const axios = require('axios');
 const router = express.Router();
 const { AccountRepo } = require('../models/Account');
 const SwiggyService = require('../services/swiggyService');
+
+// Real geocoding helper for manual/text addresses (OpenStreetMap Nominatim)
+const geocodeAddress = async (queries = []) => {
+  for (const q of queries) {
+    if (!q || !q.trim()) continue;
+    try {
+      const resp = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params: { format: 'json', limit: 1, q: q.trim() },
+        headers: { 'User-Agent': 'ToingProApp/1.0' },
+        timeout: 4500,
+      });
+      const hit = resp.data?.[0];
+      if (hit && hit.lat && hit.lon) {
+        return { lat: parseFloat(hit.lat), lng: parseFloat(hit.lon), display: hit.display_name || '' };
+      }
+    } catch (e) {}
+  }
+  return null;
+};
 
 // In-memory OTP session map: `${tgUserId}:${mobile}` -> { tid, timestamp }
 const otpSessions = new Map();
@@ -333,29 +353,38 @@ router.post('/addresses/add-link', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No active account' });
     }
 
-    let lat = 25.2730006;
-    let lng = 82.9639115;
+    let lat = null;
+    let lng = null;
     try {
       const urlObj = new URL(link);
       if (urlObj.searchParams.get('lat')) lat = parseFloat(urlObj.searchParams.get('lat'));
       if (urlObj.searchParams.get('lng')) lng = parseFloat(urlObj.searchParams.get('lng'));
     } catch (e) {}
 
+    if (!lat || !lng) {
+      const geo = await geocodeAddress([`${link}, India`, link]);
+      if (geo) {
+        lat = geo.lat;
+        lng = geo.lng;
+      }
+    }
+
     const userCity = active.addresses?.[0]?.city || 'Patna';
     const newAddress = {
       id: 'addr_' + Date.now(),
       name: name || active.userName || 'Delivery User',
       phone: `+91 ${active.phone}`,
-      address_line1: 'Added from Swiggy Link',
-      address_line2: link,
+      address_line1: link.startsWith('http') ? 'Added from Swiggy Link' : link,
+      address_line2: link.startsWith('http') ? link : '',
       city: userCity,
-      lat,
-      lng,
+      lat: lat || active.addresses?.[0]?.lat || 25.6074,
+      lng: lng || active.addresses?.[0]?.lng || 85.1587,
       tag: 'OTHER',
       isAccountAddress: true,
     };
 
     await AccountRepo.addAddress(active._id, newAddress);
+    await AccountRepo.setSelectedAddress(active._id, newAddress.id);
     res.json({ success: true, message: 'Address added successfully!', address: newAddress });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -371,21 +400,38 @@ router.post('/addresses/add-manual', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No active account' });
     }
 
-    const defaultCity = active.addresses?.[0]?.city || 'Patna';
+    const targetCity = city || active.addresses?.[0]?.city || 'Patna';
+    let resolvedLat = parseFloat(lat) || null;
+    let resolvedLng = parseFloat(lng) || null;
+
+    if (!resolvedLat || !resolvedLng) {
+      const geo = await geocodeAddress([
+        [addressLine2, targetCity, 'India'].filter(Boolean).join(', '),
+        [addressLine1, addressLine2, targetCity, 'India'].filter(Boolean).join(', '),
+        [addressLine1, targetCity, 'India'].filter(Boolean).join(', '),
+        `${targetCity}, India`,
+      ]);
+      if (geo) {
+        resolvedLat = geo.lat;
+        resolvedLng = geo.lng;
+      }
+    }
+
     const newAddress = {
       id: 'addr_' + Date.now(),
       name: name || active.userName || 'Delivery User',
       phone: phone || `+91 ${active.phone}`,
       address_line1: addressLine1 || 'Manual Address',
       address_line2: addressLine2 || '',
-      city: city || defaultCity,
-      lat: parseFloat(lat) || (active.addresses?.[0]?.lat || 25.6074),
-      lng: parseFloat(lng) || (active.addresses?.[0]?.lng || 85.1587),
+      city: targetCity,
+      lat: resolvedLat || active.addresses?.[0]?.lat || 25.6074,
+      lng: resolvedLng || active.addresses?.[0]?.lng || 85.1587,
       tag: tag || 'OTHER',
       isAccountAddress: true,
     };
 
     await AccountRepo.addAddress(active._id, newAddress);
+    await AccountRepo.setSelectedAddress(active._id, newAddress.id);
     res.json({ success: true, message: 'Address created successfully!', address: newAddress });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
