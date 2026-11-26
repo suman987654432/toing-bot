@@ -523,6 +523,49 @@ router.post('/addresses/add-manual', async (req, res) => {
 		});
 	}
 });
+// Update Address
+router.put('/addresses/:id', async (req, res) => {
+	try {
+		const { name, phone, addressLine1, addressLine2, city, tag } = req.body;
+		const active = await AccountRepo.getActive(getTgUserId(req));
+		if (!active) {
+			return res.status(400).json({ success: false, error: 'No active account' });
+		}
+		const existing = (active.addresses || []).find((a) => (a.id || a._id) === req.params.id);
+		if (!existing) {
+			return res.status(404).json({ success: false, error: 'Address not found' });
+		}
+
+		const targetCity = city || existing.city || 'Patna';
+		const updatedFields = {
+			name: name || existing.name || active.userName || 'Delivery User',
+			phone: phone || existing.phone || existing.mobile || `+91 ${active.phone}`,
+			mobile: phone || existing.mobile || existing.phone || active.phone,
+			address_line1: addressLine1 !== undefined ? addressLine1 : (existing.address_line1 || existing.flat_no || ''),
+			address_line2: addressLine2 !== undefined ? addressLine2 : (existing.address_line2 || existing.landmark || ''),
+			flat_no: addressLine1 !== undefined ? addressLine1 : (existing.flat_no || ''),
+			landmark: addressLine2 !== undefined ? addressLine2 : (existing.landmark || ''),
+			city: targetCity,
+			tag: tag || existing.tag || 'OTHER',
+		};
+
+		const geo = await geocodeAddress([
+			[updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
+			[updatedFields.address_line1, updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
+			[updatedFields.address_line1, targetCity, 'India'].filter(Boolean).join(', '),
+			`${targetCity}, India`,
+		]);
+		if (geo) {
+			updatedFields.lat = geo.lat;
+			updatedFields.lng = geo.lng;
+		}
+
+		await AccountRepo.updateAddress(active._id, req.params.id, updatedFields);
+		res.json({ success: true, message: 'Address updated successfully!', address: { ...existing, ...updatedFields } });
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
 // Delete Address
 router.delete('/addresses/:id', async (req, res) => {
 	try {

@@ -250,6 +250,31 @@ const AccountRepo = {
     return null;
   },
 
+  async updateAddress(accountId, addressId, updatedFields) {
+    if (mongoose.connection.readyState === 1) {
+      const acc = await MongooseAccountModel.findById(accountId);
+      if (acc) {
+        acc.addresses = acc.addresses.map((addr) =>
+          (addr.id || addr._id) === addressId ? { ...addr, ...updatedFields } : addr
+        );
+        acc.markModified('addresses');
+        await acc.save();
+        return acc;
+      }
+    }
+    for (const acc of memAccounts.values()) {
+      if (acc._id === accountId || acc.phone === accountId) {
+        if (acc.addresses) {
+          acc.addresses = acc.addresses.map((addr) =>
+            (addr.id || addr._id) === addressId ? { ...addr, ...updatedFields } : addr
+          );
+        }
+        return acc;
+      }
+    }
+    return null;
+  },
+
   async deleteAddress(accountId, addressId) {
     if (mongoose.connection.readyState === 1) {
       const acc = await MongooseAccountModel.findById(accountId);

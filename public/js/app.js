@@ -621,12 +621,20 @@ function renderAddressesList() {
         
         <div class="addr-user-row">
           <div class="addr-user-text">${name} | ${phone}</div>
-          <button class="addr-trash-btn" onclick="event.stopPropagation(); deleteAddress('${addr.id}')" title="Delete Address">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
+          <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+            <button class="addr-trash-btn" onclick="event.stopPropagation(); openEditAddressModal('${addr.id}')" title="Edit Address">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            </button>
+            <button class="addr-trash-btn" onclick="event.stopPropagation(); deleteAddress('${addr.id}')" title="Delete Address">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="addr-text-line">${fullText}</div>
@@ -679,6 +687,38 @@ function openAddLinkModal() {
   document.getElementById('modalAddLink').classList.remove('hidden');
 }
 function openAddManualModal() {
+  state.editingAddressId = null;
+  const titleEl = document.getElementById('manualModalTitle');
+  const btnEl = document.getElementById('btnSaveManualAddr');
+  if (titleEl) titleEl.textContent = 'Add Address Manually';
+  if (btnEl) btnEl.textContent = 'Save Address';
+  document.getElementById('manualName').value = '';
+  document.getElementById('manualPhone').value = '';
+  document.getElementById('manualLine1').value = '';
+  document.getElementById('manualLine2').value = '';
+  document.getElementById('manualCity').value = '';
+  document.getElementById('manualTag').value = 'OTHER';
+  document.getElementById('modalAddManual').classList.remove('hidden');
+}
+
+function openEditAddressModal(addressId) {
+  const addr = (state.addresses || []).find((a) => String(a.id) === String(addressId));
+  if (!addr) return;
+  state.editingAddressId = addressId;
+  const titleEl = document.getElementById('manualModalTitle');
+  const btnEl = document.getElementById('btnSaveManualAddr');
+  if (titleEl) titleEl.textContent = 'Edit Address';
+  if (btnEl) btnEl.textContent = 'Update Address';
+  document.getElementById('manualName').value = (addr.name || '').trim();
+  document.getElementById('manualPhone').value = String(addr.phone || addr.mobile || '').replace(/^\+91\s*/, '').trim();
+  document.getElementById('manualLine1').value = addr.flat_no || addr.address_line1 || '';
+  document.getElementById('manualLine2').value = addr.landmark || addr.address_line2 || addr.area || '';
+  document.getElementById('manualCity').value = addr.city || '';
+  const tagUp = String(addr.tag || 'OTHER').toUpperCase();
+  const tagSelect = document.getElementById('manualTag');
+  if (tagSelect) {
+    tagSelect.value = ['OTHER', 'HOME', 'WORK', 'FRIENDS & FAMILY'].includes(tagUp) ? tagUp : 'OTHER';
+  }
   document.getElementById('modalAddManual').classList.remove('hidden');
 }
 function closeModal(id) {
@@ -727,14 +767,17 @@ async function submitAddManual() {
   }
 
   try {
-    const res = await fetch('/api/addresses/add-manual', {
-      method: 'POST',
+    const isEdit = Boolean(state.editingAddressId);
+    const url = isEdit ? `/api/addresses/${encodeURIComponent(state.editingAddressId)}` : '/api/addresses/add-manual';
+    const res = await fetch(url, {
+      method: isEdit ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, phone, addressLine1, addressLine2, city, tag }),
     });
     const data = await res.json();
     if (data.success) {
-      showToast('Address saved!');
+      showToast(isEdit ? 'Address updated!' : 'Address saved!');
+      state.editingAddressId = null;
       closeModal('modalAddManual');
       state.lastRestaurants = [];
       state.currentMenu = null;
@@ -1594,80 +1637,54 @@ function refreshBillDetails() {
 
 function setCartPaymentMethod(method) {
   state.cart.paymentMethod = method;
-  renderDynamicPaymentOptions();
+  const upiBox = document.getElementById('optPayUPI');
+  const codBox = document.getElementById('optPayCOD');
+  const checkUpi = document.getElementById('checkPayUPI');
+  const checkCod = document.getElementById('checkPayCOD');
+  const upiWrap = document.getElementById('upiCollectInputWrap');
+  const checkSvg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="#10b981"><circle cx="12" cy="12" r="10"></circle><polyline points="8 12 11 15 16 9" stroke="#fff" stroke-width="2.5" fill="none"></polyline></svg>';
+
+  if (upiBox) upiBox.classList.toggle('selected', method !== 'Cash');
+  if (codBox) codBox.classList.toggle('selected', method === 'Cash');
+  if (checkUpi) {
+    checkUpi.className = method !== 'Cash' ? 'pay-opt-check' : 'pay-opt-radio-empty';
+    checkUpi.innerHTML = method !== 'Cash' ? checkSvg : '';
+  }
+  if (checkCod) {
+    checkCod.className = method === 'Cash' ? 'pay-opt-check' : 'pay-opt-radio-empty';
+    checkCod.innerHTML = method === 'Cash' ? checkSvg : '';
+  }
+  if (upiWrap) {
+    upiWrap.style.display = method !== 'Cash' ? 'block' : 'none';
+  }
 }
 
 async function loadPaymentOptions() {
-  const container = document.getElementById('dynamicPaymentMethodsList');
-  if (!container) return;
-
-  container.innerHTML = '<div class="skeleton-spinner-row"><div class="mini-spinner"></div><span>Loading live payment options from Swiggy...</span></div>';
   try {
     const addrId = state.selectedAddress?.id || '';
     const res = await fetch(`/api/payment-options${addrId ? '?addressId=' + encodeURIComponent(addrId) : ''}`);
     const data = await res.json();
-
-    if (!data.success || !Array.isArray(data.groups) || data.groups.length === 0) {
-      container.innerHTML = `<div class="empty-hint" style="padding:12px;">${data.error || 'No live payment options returned. Please login & select an address.'}</div>`;
-      return;
+    const codBox = document.getElementById('optPayCOD');
+    const codName = document.getElementById('codNameText');
+    const codDesc = document.getElementById('codDescText');
+    if (codBox && data.success) {
+      if (data.codEnabled) {
+        codBox.classList.remove('disabled');
+        if (codName) codName.style.color = '';
+        if (codDesc) {
+          codDesc.className = 'pay-opt-desc';
+          codDesc.textContent = 'Pay cash or ask for QR code';
+        }
+      } else {
+        codBox.classList.add('disabled');
+        if (codName) codName.style.color = 'var(--text-muted)';
+        if (codDesc) {
+          codDesc.className = 'pay-opt-badge-soon';
+          codDesc.textContent = 'Currently unavailable';
+        }
+      }
     }
-
-    state.paymentGroups = data.groups;
-    state.codEnabled = Boolean(data.codEnabled);
-
-    // Default to first enabled method if current isn't in list
-    const allMethods = data.groups.flatMap((g) => g.methods || []);
-    if (!allMethods.some((m) => m.payment_code === state.cart.paymentMethod && m.enabled)) {
-      const firstEnabled = allMethods.find((m) => m.enabled);
-      if (firstEnabled) state.cart.paymentMethod = firstEnabled.payment_code;
-    }
-
-    renderDynamicPaymentOptions();
-  } catch (e) {
-    container.innerHTML = '<div class="empty-hint" style="padding:12px;">Failed to load live payment options.</div>';
-  }
-}
-
-function renderDynamicPaymentOptions() {
-  const container = document.getElementById('dynamicPaymentMethodsList');
-  const upiWrap = document.getElementById('upiCollectInputWrap');
-  if (!container) return;
-
-  const groups = state.paymentGroups || [];
-  if (groups.length === 0) return;
-
-  let html = '';
-  groups.forEach((grp) => {
-    html += `<div style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px; margin:10px 0 6px;">${grp.display_name}</div>`;
-    (grp.methods || []).forEach((m) => {
-      const code = m.payment_code || m.name;
-      const isSelected = state.cart.paymentMethod === code;
-      const isDisabled = !m.enabled;
-      html += `
-        <div class="pay-opt-box ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}" onclick="${isDisabled ? '' : `setCartPaymentMethod('${code.replace(/'/g, "\\'")}')`}">
-          <div class="pay-opt-icon-wrap" style="overflow:hidden;">
-            ${m.icon_url ? `<img src="${m.icon_url}" alt="" style="width:22px; height:22px; object-fit:contain;" onerror="this.style.display='none';" />` : `<span style="font-size:16px;">💳</span>`}
-          </div>
-          <div class="pay-opt-info">
-            <div class="pay-opt-name" style="${isDisabled ? 'color:var(--text-muted);' : ''}">${m.display_name}</div>
-            ${m.subtitle ? `<div class="pay-opt-desc">${m.subtitle}</div>` : ''}
-          </div>
-          ${isSelected ? `
-            <div class="pay-opt-check">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="#10b981"><circle cx="12" cy="12" r="10"></circle><polyline points="8 12 11 15 16 9" stroke="#fff" stroke-width="2.5" fill="none"></polyline></svg>
-            </div>
-          ` : '<div class="pay-opt-radio-empty"></div>'}
-        </div>
-      `;
-    });
-  });
-
-  container.innerHTML = html;
-
-  if (upiWrap) {
-    const pm = String(state.cart.paymentMethod || '').toUpperCase();
-    upiWrap.style.display = pm.includes('UPI') ? 'block' : 'none';
-  }
+  } catch (e) {}
 }
 
 async function fetchCoupons() {

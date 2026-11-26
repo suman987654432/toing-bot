@@ -3697,11 +3697,36 @@ button svg {
               <span class="pay-title-txt">Payment Method</span>
             </div>
 
-            <div class="pay-methods-list" id="dynamicPaymentMethodsList">
-              <div class="skeleton-spinner-row"><div class="mini-spinner"></div><span>Loading live payment options...</span></div>
-            </div>
-            <div id="upiCollectInputWrap" style="margin-top:8px;">
-              <input type="text" id="inputUpiVpa" class="modal-input" style="margin-bottom:0; font-size:13px;" placeholder="Optional: Enter UPI ID (e.g. number@ybl) for Collect Request" autocomplete="off" />
+            <div class="pay-methods-list">
+              <!-- UPI / QR Option (Selected) -->
+              <div class="pay-opt-box selected" id="optPayUPI" onclick="setCartPaymentMethod('UPIIntent')">
+                <div class="pay-opt-icon-wrap">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                </div>
+                <div class="pay-opt-info">
+                  <div class="pay-opt-name">UPI / QR</div>
+                  <div class="pay-opt-desc">Pay with any payment apps</div>
+                </div>
+                <div class="pay-opt-check" id="checkPayUPI">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#10b981"><circle cx="12" cy="12" r="10"></circle><polyline points="8 12 11 15 16 9" stroke="#fff" stroke-width="2.5" fill="none"></polyline></svg>
+                </div>
+              </div>
+
+              <div id="upiCollectInputWrap" style="margin-top:8px;">
+                <input type="text" id="inputUpiVpa" class="modal-input" style="margin-bottom:0; font-size:13px;" placeholder="Optional: Enter UPI ID (e.g. number@ybl) for Collect Request" autocomplete="off" />
+              </div>
+
+              <!-- Cash on Delivery Option -->
+              <div class="pay-opt-box disabled" id="optPayCOD" onclick="if(!this.classList.contains('disabled')) setCartPaymentMethod('Cash')">
+                <div class="pay-opt-icon-wrap">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                </div>
+                <div class="pay-opt-info">
+                  <div class="pay-opt-name" id="codNameText" style="color:var(--text-muted);">Cash on Delivery</div>
+                  <div class="pay-opt-badge-soon" id="codDescText">Adding soon</div>
+                </div>
+                <div class="pay-opt-radio-empty" id="checkPayCOD"></div>
+              </div>
             </div>
           </div>
 
@@ -3894,7 +3919,7 @@ button svg {
     <div class="modal-overlay hidden" id="modalAddManual">
       <div class="modal-box">
         <div class="modal-header">
-          <h3>Add Address Manually</h3>
+          <h3 id="manualModalTitle">Add Address Manually</h3>
           <button class="modal-close" onclick="closeModal('modalAddManual')">✕</button>
         </div>
         <input type="text" id="manualName" placeholder="Recipient Name (e.g. Aman)" class="modal-input" />
@@ -3910,7 +3935,7 @@ button svg {
             <option value="FRIENDS & FAMILY">FRIENDS & FAMILY</option>
           </select>
         </div>
-        <button class="btn-primary" onclick="submitAddManual()">Save Address</button>
+        <button class="btn-primary" id="btnSaveManualAddr" onclick="submitAddManual()">Save Address</button>
       </div>
     </div>
 
