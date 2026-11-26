@@ -3301,6 +3301,82 @@ button svg {
   margin-left: 2px;
 }
 
+/* Store Bot Promo Banner */
+.store-bot-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  margin-bottom: 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 52%, #ec4899 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 22px -6px rgba(168, 85, 247, 0.45);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+.store-bot-banner:active {
+  transform: scale(0.985);
+}
+
+.store-bot-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.store-bot-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #ffffff;
+}
+
+.store-bot-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.store-bot-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #ffffff;
+}
+
+.store-bot-sub {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+  line-height: 1.2;
+}
+
+.store-bot-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffffff;
+  color: #4c1d95;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
   </style>
 </head>
 <body class="light-theme">
@@ -3357,6 +3433,24 @@ button svg {
 
       <!-- ================= 1. ACCOUNTS VIEW ================= -->
       <section id="tab-accounts" class="view-panel">
+        <!-- Buy Accounts Store Bot Banner -->
+        <div class="store-bot-banner" id="storeBotBanner" onclick="openStoreBot()" role="button" tabindex="0">
+          <div class="store-bot-left">
+            <div class="store-bot-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <path d="M16 10a4 4 0 0 1-8 0" />
+              </svg>
+            </div>
+            <div class="store-bot-text">
+              <div class="store-bot-title">Buy Swiggy &amp; Toing New Accounts</div>
+              <div class="store-bot-sub">Tap to open our store bot</div>
+            </div>
+          </div>
+          <span class="store-bot-go">Go →</span>
+        </div>
+
         <div class="card add-account-card">
           <div class="card-header">
             <div class="card-title">

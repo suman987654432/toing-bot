@@ -2688,3 +2688,21 @@ async function handleScratchCard() {
     showToast('Cards unlocked!');
   }
 }
+
+function openStoreBot() {
+  const url = 'https://t.me/CodeAddabot';
+  const tg = window.Telegram?.WebApp;
+  if (tg && typeof tg.openTelegramLink === 'function') {
+    try {
+      tg.openTelegramLink(url);
+      return;
+    } catch (e) {}
+  }
+  if (tg && typeof tg.openLink === 'function') {
+    try {
+      tg.openLink(url);
+      return;
+    } catch (e) {}
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}

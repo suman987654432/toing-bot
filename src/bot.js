@@ -155,6 +155,7 @@ const initBot = (webAppUrl) => {
           { text: '👥 Saved Accounts', callback_data: 'view_accounts', style: 'primary' },
           { text: '⚡ Tools & Claims', callback_data: 'tools_menu', style: 'primary' },
         ],
+        [{ text: '🛒 Buy Account', url: 'https://t.me/CodeAddabot', style: 'primary' }],
       ];
 
       if (isAdminUser(tgUid)) {
