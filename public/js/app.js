@@ -96,6 +96,24 @@ document.addEventListener('DOMContentLoaded', () => {
   Promise.all([loadAccounts(), loadAddresses()]);
 });
 
+// Skeleton / Spinner Loader helper
+function getSkeletonHtml(count = 4, withThumb = true) {
+  let html = '';
+  for (let i = 0; i < count; i++) {
+    html += `
+      <div class="skeleton-card">
+        ${withThumb ? '<div class="skeleton-thumb"></div>' : ''}
+        <div class="skeleton-lines">
+          <div class="skeleton-line" style="height:14px; width:${withThumb ? '65%' : '45%'};"></div>
+          <div class="skeleton-line" style="height:11px; width:${withThumb ? '45%' : '85%'};"></div>
+          <div class="skeleton-line" style="height:11px; width:75%;"></div>
+        </div>
+      </div>
+    `;
+  }
+  return html;
+}
+
 // Toast notification helper
 function showToast(message, isError = false) {
   toastEl.textContent = message;
@@ -515,8 +533,8 @@ function toggleAccountDropdown() {
 // 2. ADDRESS MANAGEMENT (MATCHING IMAGE 1)
 // ==========================================
 async function loadAddresses(forceRefresh = false) {
-  if (state.addresses.length === 0) {
-    addressList.innerHTML = '<div class="loading-state">Loading addresses...</div>';
+  if (state.addresses.length === 0 || forceRefresh) {
+    addressList.innerHTML = getSkeletonHtml(3, false);
   }
 
   try {
@@ -720,12 +738,7 @@ async function performSearch() {
   }
   searchAbortController = new AbortController();
 
-  // Avoid collapsing page height while user is typing (prevents mobile WebView keyboard blur)
-  if (!searchResults.children.length || searchResults.querySelector('.empty-hint')) {
-    searchResults.innerHTML = '<div class="loading-state">Searching Toing restaurants...</div>';
-  } else {
-    searchResults.style.opacity = '0.55';
-  }
+  searchResults.innerHTML = getSkeletonHtml(4, true);
 
   const lat = state.selectedAddress?.lat || 25.6074;
   const lng = state.selectedAddress?.lng || 85.1587;
@@ -739,7 +752,6 @@ async function performSearch() {
       signal: searchAbortController.signal,
     });
     const data = await res.json();
-    searchResults.style.opacity = '1';
     const restaurants = data.restaurants || [];
     state.lastRestaurants = restaurants;
 
@@ -790,7 +802,6 @@ async function performSearch() {
     searchResults.innerHTML = html;
   } catch (err) {
     if (err && err.name === 'AbortError') return;
-    searchResults.style.opacity = '1';
     searchResults.innerHTML = '<div class="empty-hint">Search failed. Check server connection.</div>';
   }
 }
@@ -873,7 +884,7 @@ function selectRestaurant(id, encName, encArea, isOpen = true) {
 async function loadRestaurantMenu(restaurantId, restObj = {}) {
   const menuContainer = document.getElementById('menuItemsList');
   if (menuContainer) {
-    menuContainer.innerHTML = '<div class="loading-state">Loading menu items from Swiggy...</div>';
+    menuContainer.innerHTML = getSkeletonHtml(5, true);
   }
 
   try {
@@ -1707,7 +1718,7 @@ async function handlePlaceOrder() {
 // ==========================================
 async function fetchOrders() {
   const container = document.getElementById('ordersList');
-  container.innerHTML = '<div class="loading-state">Loading past orders from Swiggy...</div>';
+  container.innerHTML = getSkeletonHtml(3, false);
 
   try {
     const res = await fetch('/api/orders');
@@ -1749,7 +1760,7 @@ async function openOrderDetails(orderId) {
   if (!modal || !body) return;
 
   if (title) title.textContent = `Order #${orderId}`;
-  body.innerHTML = '<div class="loading-state" style="padding:18px 0;">Fetching live status from Swiggy...</div>';
+  body.innerHTML = '<div class="skeleton-spinner-row"><div class="mini-spinner"></div><span>Loading live order status...</span></div>';
   modal.classList.remove('hidden');
 
   const cached = (state.ordersCache || []).find((o) => String(o.order_id) === String(orderId));
