@@ -765,34 +765,28 @@ router.get('/orders', async (req, res) => {
 						token
 					} = await getActiveCreds(tgUserId);
 					const liveOrdersList = [];
-					// 1. Fetch live orders from Swiggy account orders API
 					// 1. Fetch live orders from Swiggy account orders API (protobuf parsed)
 					if (tid || token) {
 						try {
 							const sOrders = await SwiggyService.getOrders(10, tid, token);
-							const pastOrders = sOrders.data?.data?.orders || [];
 							const pastOrders = sOrders.orders || sOrders.data?.data?.orders || [];
 							for (const ord of pastOrders) {
 								liveOrdersList.push({
-										order_id: String(ord.order_id),
-										restaurant_name: ord.restaurant_name || 'Restaurant',
-										order_total: String(ord.order_total || '0'),
-										order_status: (ord.order_status || 'DELIVERED').toUpperCase(),
-										delivery_address: ord.delivery_address?.address || active?.addresses?.[0]?.address_line1 || 'Delivery Address',
-										delivery_address: ord.delivery_address?.address || ord.delivery_address || active?.addresses?.[0]?.address_line1 || 'Delivery Address',
-										order_time: ord.order_time || 'Past Order',
-										items: (ord.order_items || ord.items || []).map((it) => ({
-												items: (ord.items || ord.order_items || []).map((it) => ({
-													name: it.name,
-													quantity: it.quantity || 1,
-													cost: (it.sub_total || it.item_total || it.final_price || 0) * 100,
-													cost: it.cost || (it.sub_total || it.item_total || it.final_price || 0) * 100,
-												})),
-											});
-										}
-									}
-									catch (e) {}
-								}
+									order_id: String(ord.order_id),
+									restaurant_name: ord.restaurant_name || 'Restaurant',
+									order_total: String(ord.order_total || '0'),
+									order_status: (ord.order_status || 'DELIVERED').toUpperCase(),
+									delivery_address: ord.delivery_address?.address || ord.delivery_address || active?.addresses?.[0]?.address_line1 || 'Delivery Address',
+									order_time: ord.order_time || 'Past Order',
+									items: (ord.items || ord.order_items || []).map((it) => ({
+										name: it.name,
+										quantity: it.quantity || 1,
+										cost: it.cost || (it.sub_total || it.item_total || it.final_price || 0) * 100,
+									})),
+								});
+							}
+						} catch (e) {}
+					}
 								// Combine newly placed orders in this user's session with live orders (deduped by order_id)
 								const userOrders = getUserPlacedOrders(tgUserId);
 								const seen = new Set(userOrders.map((o) => String(o.order_id)));
