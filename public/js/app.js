@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnSendOtpText) btnSendOtpText.textContent = 'Verify OTP';
   }
 
-  Promise.all([loadAccounts(), loadAddresses()]);
+  Promise.all([loadAccounts(), loadAddresses(), loadWallet()]);
 });
 
 // Skeleton / Spinner Loader helper
@@ -1594,6 +1594,7 @@ function updateCartView() {
   // Sticky pay bar elements
   const stickyAmt = document.getElementById('stickyPayAmount');
   if (stickyAmt) stickyAmt.textContent = `₹${toPay}`;
+  updateWalletUi();
 
   fetchCoupons();
 }
@@ -1765,6 +1766,13 @@ async function handlePlaceOrder() {
     return;
   }
 
+  // Enforce ₹3 order fee in wallet (min ₹15 deposit)
+  if ((state.walletBalance || 0) < 3) {
+    showToast('₹3 order fee required! Please deposit min ₹15 in wallet.', true);
+    openWalletModal();
+    return;
+  }
+
   const btn = document.getElementById('btnPlaceOrder');
   const stickyBtn = document.getElementById('btnStickyPayOrder');
   if (btn) {
@@ -1802,7 +1810,14 @@ async function handlePlaceOrder() {
     });
 
     const data = await res.json();
+    if (data.code === 'INSUFFICIENT_WALLET_BALANCE') {
+      showToast(data.error || '₹3 order fee required! Min ₹15 deposit.', true);
+      loadWallet();
+      openWalletModal();
+      return;
+    }
     if (data.success && data.order_id) {
+      loadWallet();
       const pmUp = String(data.payment_code || payMethod || '').toUpperCase();
       if (pmUp === 'CASH' || pmUp === 'COD') {
         showToast(`🎉 Order #${data.order_id} Placed (Pay on Delivery)!`);
@@ -1831,11 +1846,167 @@ async function handlePlaceOrder() {
     }
     if (stickyBtn) {
       stickyBtn.disabled = false;
-      stickyBtn.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-        <span>Add order fee</span>
-      `;
+      updateWalletUi();
     }
+  }
+}
+
+// ==========================================
+// 7. BOT WALLET & BHARATPE RECHARGE (₹3 FEE, MIN ₹15 DEPOSIT)
+// ==========================================
+let bharatPePollTimer = null;
+let activeRechargeRefId = '';
+
+async function loadWallet() {
+  try {
+    const res = await fetch('/api/wallet');
+    const data = await res.json();
+    if (data.success) {
+      state.walletBalance = Number(data.balance || 0);
+      state.walletTxns = data.transactions || [];
+      updateWalletUi();
+      renderWalletTransactions();
+    }
+  } catch (e) {}
+}
+
+function updateWalletUi() {
+  const bal = Number(state.walletBalance || 0);
+  const pillText = document.getElementById('walletBalanceText');
+  if (pillText) pillText.textContent = `₹${bal}`;
+  const modalBal = document.getElementById('modalWalletBal');
+  if (modalBal) modalBal.textContent = `₹${bal}`;
+
+  const stickyBtn = document.getElementById('btnStickyPayOrder');
+  if (stickyBtn && !stickyBtn.disabled) {
+    stickyBtn.innerHTML = bal < 3
+      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg><span id="stickyPayBtnText">Add order fee</span>`
+      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="stickyPayBtnText">Place Order (₹3 Fee)</span>`;
+  }
+}
+
+function renderWalletTransactions() {
+  const box = document.getElementById('walletTxnsList');
+  if (!box) return;
+  const txns = state.walletTxns || [];
+  if (txns.length === 0) {
+    box.innerHTML = '<div>No transactions yet. Deposit min ₹15 to start ordering.</div>';
+    return;
+  }
+  box.innerHTML = txns.map((t) => {
+    const isCredit = t.type === 'CREDIT';
+    return `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px dashed var(--border-color);">
+      <span style="color:var(--text-main);">${t.description || t.type}</span>
+      <strong style="color:${isCredit ? '#16a34a' : '#dc2626'};">${isCredit ? '+' : '-'}₹${t.amount}</strong>
+    </div>`;
+  }).join('');
+}
+
+function openWalletModal() {
+  resetWalletModalStep();
+  loadWallet();
+  document.getElementById('modalWalletRecharge').classList.remove('hidden');
+}
+
+function closeWalletModal() {
+  if (bharatPePollTimer) {
+    clearInterval(bharatPePollTimer);
+    bharatPePollTimer = null;
+  }
+  closeModal('modalWalletRecharge');
+}
+
+function resetWalletModalStep() {
+  if (bharatPePollTimer) {
+    clearInterval(bharatPePollTimer);
+    bharatPePollTimer = null;
+  }
+  activeRechargeRefId = '';
+  document.getElementById('walletAmountStep').classList.remove('hidden');
+  document.getElementById('walletQrStep').classList.add('hidden');
+}
+
+function setRechargeAmount(amt) {
+  const input = document.getElementById('inputRechargeAmount');
+  if (input) input.value = amt;
+}
+
+async function initBharatPeRecharge() {
+  const amt = Math.round(Number(document.getElementById('inputRechargeAmount')?.value || 0));
+  if (!amt || amt < 15) {
+    showToast('Minimum deposit is ₹15', true);
+    return;
+  }
+  const btn = document.getElementById('btnInitBharatPe');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Generating QR...';
+  }
+  try {
+    const res = await fetch('/api/wallet/recharge/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: amt }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      showToast(data.error || 'Failed to generate BharatPe QR', true);
+      return;
+    }
+    activeRechargeRefId = data.refId;
+    document.getElementById('qrPayAmountText').textContent = `₹${data.amount}`;
+    document.getElementById('bharatPeQrImg').src = data.qrUrl;
+    document.getElementById('bharatPeUpiLink').href = data.upiUri;
+    document.getElementById('inputManualUtr').value = '';
+    document.getElementById('bharatPePollStatus').innerHTML = '<div class="mini-spinner"></div><span>Waiting for BharatPe auto-verification...</span>';
+    document.getElementById('walletAmountStep').classList.add('hidden');
+    document.getElementById('walletQrStep').classList.remove('hidden');
+
+    if (bharatPePollTimer) clearInterval(bharatPePollTimer);
+    let checks = 0;
+    bharatPePollTimer = setInterval(async () => {
+      checks++;
+      if (checks > 45) {
+        clearInterval(bharatPePollTimer);
+        bharatPePollTimer = null;
+        return;
+      }
+      await verifyBharatPeRecharge(true);
+    }, 3500);
+  } catch (e) {
+    showToast('Network error generating QR', true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Generate BharatPe QR';
+    }
+  }
+}
+
+async function verifyBharatPeRecharge(isAuto = false) {
+  const utr = (document.getElementById('inputManualUtr')?.value || '').trim();
+  try {
+    const res = await fetch('/api/wallet/recharge/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refId: activeRechargeRefId, utr }),
+    });
+    const data = await res.json();
+    if (data.verified) {
+      if (bharatPePollTimer) {
+        clearInterval(bharatPePollTimer);
+        bharatPePollTimer = null;
+      }
+      showToast(`🎉 ₹${data.creditedAmount} added to wallet!`);
+      state.walletBalance = Number(data.balance || 0);
+      updateWalletUi();
+      loadWallet();
+      closeWalletModal();
+    } else if (!isAuto) {
+      showToast(data.error || data.message || 'Payment not received yet', true);
+    }
+  } catch (e) {
+    if (!isAuto) showToast('Error verifying payment', true);
   }
 }
 

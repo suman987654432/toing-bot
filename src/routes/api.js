@@ -4,7 +4,15 @@ const router = express.Router();
 const {
 	AccountRepo
 } = require('../models/Account');
+const {
+	WalletRepo
+} = require('../models/Wallet');
 const SwiggyService = require('../services/swiggyService');
+const BharatPeService = require('../services/bharatpeService');
+
+const ORDER_FEE_INR = 3;
+const MIN_DEPOSIT_INR = 15;
+const pendingRecharges = new Map();
 // Real geocoding helper for manual/text addresses (OpenStreetMap Nominatim)
 const geocodeAddress = async (queries = []) => {
 	for (const q of queries) {
@@ -960,6 +968,16 @@ router.get('/orders', async (req, res) => {
 								});
 							}
 
+							// Atomic ₹3 Order Fee deduction from user's wallet
+							const feeCheck = await WalletRepo.deductOrderFee(tgUserId, ORDER_FEE_INR);
+							if (!feeCheck.success) {
+								return res.status(402).json({
+									success: false,
+									code: 'INSUFFICIENT_WALLET_BALANCE',
+									error: `₹${ORDER_FEE_INR} order fee required! Minimum ₹${MIN_DEPOSIT_INR} deposit needed in your wallet.`,
+								});
+							}
+
 							const lat = selected.lat || 25.6074;
 							const lng = selected.lng || 85.1587;
 							const addressId = selected.id || active?.selectedAddressId || '';
@@ -1001,9 +1019,11 @@ router.get('/orders', async (req, res) => {
 							}, tid, token, userId);
 
 							if (!placeRes.success || !placeRes.orderId) {
+								// Auto-refund ₹3 order fee immediately if Swiggy rejects order placement
+								await WalletRepo.refundOrderFee(tgUserId, ORDER_FEE_INR, 'Order Failed Auto-Refund');
 								return res.status(400).json({
 									success: false,
-									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || 'Swiggy rejected order placement. Please verify cart items & session.',
+									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || 'Swiggy rejected order placement. ₹3 fee refunded.',
 									details: placeRes.data || placeRes.error,
 								});
 							}
@@ -1231,4 +1251,161 @@ router.get('/orders', async (req, res) => {
 							});
 						}
 					});
-					module.exports = router;
+					/* =========================================
+   7. WALLET & BHARATPE MERCHANT RECHARGE
+   ========================================= */
+router.get('/wallet', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const wallet = await WalletRepo.getWallet(tgUserId);
+		const transactions = await WalletRepo.getTransactions(tgUserId, 20);
+		res.json({
+			success: true,
+			balance: wallet.balance || 0,
+			minDeposit: MIN_DEPOSIT_INR,
+			orderFee: ORDER_FEE_INR,
+			transactions,
+		});
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
+router.post('/wallet/recharge/init', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const amount = Math.round(Number(req.body.amount || 0));
+		if (!amount || amount < MIN_DEPOSIT_INR) {
+			return res.status(400).json({
+				success: false,
+				error: `Minimum deposit is ₹${MIN_DEPOSIT_INR}`,
+			});
+		}
+		const refId = 'TOING' + Date.now().toString().slice(-8);
+		const { upiUri, qrUrl } = BharatPeService.buildUpiPayment(amount, refId);
+		if (!upiUri) {
+			return res.status(500).json({
+				success: false,
+				error: 'BharatPe UPI ID is not configured on server.',
+			});
+		}
+		pendingRecharges.set(refId, {
+			tgUserId,
+			amount,
+			createdAt: Date.now(),
+		});
+		res.json({
+			success: true,
+			refId,
+			amount,
+			upiUri,
+			qrUrl,
+			minDeposit: MIN_DEPOSIT_INR,
+		});
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
+router.post('/wallet/recharge/verify', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const { refId, utr } = req.body;
+		const cleanUtr = String(utr || '').replace(/\s+/g, '').trim();
+		const session = refId ? pendingRecharges.get(refId) : null;
+
+		const bpRes = await BharatPeService.fetchTransactions(2);
+		if (!bpRes.success) {
+			return res.status(502).json({
+				success: false,
+				verified: false,
+				error: bpRes.error || 'Could not reach BharatPe Merchant API',
+			});
+		}
+
+		const txns = bpRes.transactions || [];
+		let matched = null;
+
+		if (cleanUtr) {
+			// Manual UTR match against BharatPe live transactions
+			matched = txns.find((t) =>
+				String(t.bankReferenceNo || '').trim() === cleanUtr &&
+				t.status === 'SUCCESS' &&
+				t.type === 'PAYMENT_RECV'
+			);
+			if (!matched) {
+				return res.json({
+					success: true,
+					verified: false,
+					message: 'UTR not found yet in BharatPe transactions. Please wait a few seconds and retry.',
+				});
+			}
+			if (Number(matched.amount) < MIN_DEPOSIT_INR) {
+				return res.status(400).json({
+					success: false,
+					verified: false,
+					error: `Minimum deposit is ₹${MIN_DEPOSIT_INR}. This transaction is only ₹${matched.amount}.`,
+				});
+			}
+		} else if (session && session.tgUserId === tgUserId) {
+			// Auto-match latest unclaimed SUCCESS transaction matching amount & after session start
+			for (const t of txns) {
+				if (
+					t.status === 'SUCCESS' &&
+					t.type === 'PAYMENT_RECV' &&
+					Number(t.amount) === Number(session.amount) &&
+					Number(t.paymentTimestamp || 0) >= session.createdAt - 15000
+				) {
+					const already = await WalletRepo.isUtrClaimed(t.bankReferenceNo);
+					if (!already) {
+						matched = t;
+						break;
+					}
+				}
+			}
+		} else {
+			return res.status(400).json({
+				success: false,
+				verified: false,
+				error: 'Recharge session expired. Please enter UTR or generate a new QR.',
+			});
+		}
+
+		if (!matched) {
+			return res.json({
+				success: true,
+				verified: false,
+				message: 'Waiting for payment confirmation...',
+			});
+		}
+
+		const creditRes = await WalletRepo.creditByUtr(
+			tgUserId,
+			Number(matched.amount),
+			String(matched.bankReferenceNo),
+			`BharatPe QR Recharge (UTR: ${matched.bankReferenceNo})`
+		);
+
+		if (!creditRes.success) {
+			return res.status(400).json({
+				success: false,
+				verified: false,
+				error: creditRes.error,
+			});
+		}
+
+		if (refId) pendingRecharges.delete(refId);
+		res.json({
+			success: true,
+			verified: true,
+			creditedAmount: Number(matched.amount),
+			balance: creditRes.balance,
+			utr: String(matched.bankReferenceNo),
+			message: `₹${matched.amount} added to your wallet!`,
+		});
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
+module.exports = router;
