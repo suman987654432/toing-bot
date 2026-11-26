@@ -711,9 +711,21 @@ function highlightQuery(name, q) {
 // ==========================================
 // 3. SEARCH VIEW (MATCHING IMAGE 2)
 // ==========================================
+let searchAbortController = null;
+
 async function performSearch() {
   const query = inputSearchQuery.value.trim() || 'Pizza';
-  searchResults.innerHTML = '<div class="loading-state">Searching Toing restaurants...</div>';
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+  searchAbortController = new AbortController();
+
+  // Avoid collapsing page height while user is typing (prevents mobile WebView keyboard blur)
+  if (!searchResults.children.length || searchResults.querySelector('.empty-hint')) {
+    searchResults.innerHTML = '<div class="loading-state">Searching Toing restaurants...</div>';
+  } else {
+    searchResults.style.opacity = '0.55';
+  }
 
   const lat = state.selectedAddress?.lat || 25.6074;
   const lng = state.selectedAddress?.lng || 85.1587;
@@ -724,8 +736,10 @@ async function performSearch() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, lat, lng, city }),
+      signal: searchAbortController.signal,
     });
     const data = await res.json();
+    searchResults.style.opacity = '1';
     const restaurants = data.restaurants || [];
     state.lastRestaurants = restaurants;
 
@@ -775,6 +789,8 @@ async function performSearch() {
 
     searchResults.innerHTML = html;
   } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    searchResults.style.opacity = '1';
     searchResults.innerHTML = '<div class="empty-hint">Search failed. Check server connection.</div>';
   }
 }
@@ -800,7 +816,7 @@ if (inputSearchQuery) {
     clearTimeout(searchDebounceTimeout);
     searchDebounceTimeout = setTimeout(() => {
       performSearch();
-    }, 400);
+    }, 500);
   });
 }
 
