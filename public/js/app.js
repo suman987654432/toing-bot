@@ -2037,7 +2037,12 @@ async function initBharatPeRecharge() {
     activeRechargeRefId = data.refId;
     document.getElementById('qrPayAmountText').textContent = `₹${data.amount}`;
     document.getElementById('bharatPeQrImg').src = data.qrUrl;
-    document.getElementById('bharatPeUpiLink').href = data.upiUri;
+    const bpLink = document.getElementById('bharatPeUpiLink');
+    bpLink.href = '#';
+    bpLink.onclick = (e) => {
+      e.preventDefault();
+      openExternalUpi(data.upiUri);
+    };
     document.getElementById('inputManualUtr').value = '';
     document.getElementById('bharatPePollStatus').innerHTML = '<div class="mini-spinner"></div><span>Waiting for BharatPe auto-verification...</span>';
     document.getElementById('walletAmountStep').classList.add('hidden');
@@ -2122,12 +2127,41 @@ function cancelPaymentFlow() {
   closeModal('modalPaymentFlow');
 }
 
+function openExternalUpi(uri) {
+  if (!uri) return;
+  const tgOpen = window.Telegram?.WebApp?.openLink;
+  if (tgOpen) {
+    // Telegram WebView throws net::ERR_UNKNOWN_URL_SCHEME on upi:// navigation;
+    // open an https:// launcher page in the external browser instead.
+    const launchUrl = `${window.location.origin}/api/upi-launch?uri=${encodeURIComponent(uri)}`;
+    try {
+      tgOpen.call(window.Telegram.WebApp, launchUrl, { try_instant_view: false });
+      return;
+    } catch (e) {}
+  }
+  window.location.href = uri;
+}
+
+function copyUpiUri(uri) {
+  if (!uri) return;
+  navigator.clipboard?.writeText(uri).then(() => {
+    showToast('📋 UPI Link copied!');
+  }).catch(() => {
+    showToast('Copy failed', true);
+  });
+}
+
 function openPaymentFlowModal(info) {
   const modal = document.getElementById('modalPaymentFlow');
   const body = document.getElementById('paymentModalBody');
   if (!modal || !body) return;
 
   const { orderId, paasId, amount, upiUri, paymentCode, upiVpa } = info;
+  state.activeUpiUri = upiUri || '';
+  const qrImgUrl = upiUri
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=185x185&margin=6&data=${encodeURIComponent(upiUri)}`
+    : '';
+
   body.innerHTML = `
     <div style="background:var(--input-bg); border:1px solid var(--border-color); border-radius:12px; padding:12px; margin-bottom:12px;">
       <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
@@ -2142,7 +2176,20 @@ function openPaymentFlowModal(info) {
     </div>
 
     ${upiVpa ? `<div style="background:rgba(16,185,129,0.1); color:#047857; padding:9px 12px; border-radius:10px; font-size:12.5px; font-weight:600; margin-bottom:12px;">📲 UPI Collect request sent to <strong>${upiVpa}</strong>. Please approve in your UPI app!</div>` : ''}
-    ${upiUri ? `<a href="${upiUri}" class="btn-primary" style="text-decoration:none; margin-bottom:10px;">🚀 Open UPI App & Pay ₹${amount}</a>` : ''}
+    ${qrImgUrl ? `
+      <div style="text-align:center; margin-bottom:10px;">
+        <div style="background:#fff; padding:8px; border-radius:12px; display:inline-block; border:1px solid var(--border-color);">
+          <img src="${qrImgUrl}" alt="Swiggy UPI QR" style="width:175px; height:175px; display:block;" />
+        </div>
+        <div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">Scan QR with GPay / PhonePe / Paytm</div>
+      </div>
+    ` : ''}
+    ${upiUri ? `
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button type="button" class="btn-primary" style="flex:1;" onclick="openExternalUpi(state.activeUpiUri)">🚀 Open UPI App & Pay ₹${amount}</button>
+        <button type="button" class="btn-secondary" style="padding:10px 14px;" onclick="copyUpiUri(state.activeUpiUri)" title="Copy UPI Link">📋</button>
+      </div>
+    ` : ''}
 
     <div id="vpaLiveStatusBox" class="skeleton-spinner-row" style="padding:10px 0;">
       <div class="mini-spinner"></div>

@@ -1516,4 +1516,67 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 	}
 });
 
+// Safe external-browser UPI launcher for Telegram Mini App WebView
+router.get('/upi-launch', (req, res) => {
+	const rawUri = String(req.query.uri || '').trim();
+	if (!rawUri || !/^upi:\/\/pay\b/i.test(rawUri)) {
+		return res.status(400).send('Invalid UPI URI');
+	}
+	const queryPart = rawUri.replace(/^upi:\/\/pay\??/i, '');
+	const gpayUri = `tez://upi/pay?${queryPart}`;
+	const phonepeUri = `phonepe://pay?${queryPart}`;
+	const paytmUri = `paytmmp://pay?${queryPart}`;
+	const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=210x210&margin=8&data=${encodeURIComponent(rawUri)}`;
+
+	res.setHeader('Content-Type', 'text/html; charset=utf-8');
+	res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pay via UPI</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#0f172a; color:#f8fafc; margin:0; padding:20px; display:flex; align-items:center; justify-content:center; min-height:100vh; box-sizing:border-box; }
+    .card { background:#1e293b; border:1px solid #334155; border-radius:18px; padding:22px; max-width:380px; width:100%; text-align:center; box-shadow:0 20px 40px rgba(0,0,0,0.4); }
+    h2 { margin:0 0 6px; font-size:19px; }
+    p { margin:0 0 16px; color:#94a3b8; font-size:13px; }
+    .qr { background:#fff; padding:10px; border-radius:14px; display:inline-block; margin-bottom:14px; }
+    .qr img { width:190px; height:190px; display:block; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+    .btn { display:block; padding:12px 10px; border-radius:11px; text-decoration:none; font-weight:700; font-size:13.5px; color:#fff; border:none; cursor:pointer; }
+    .btn-upi { background:#6366f1; width:100%; margin-bottom:10px; box-sizing:border-box; }
+    .btn-gpay { background:#2563eb; }
+    .btn-pe { background:#5f259f; }
+    .btn-ptm { background:#00baf2; color:#0f172a; }
+    .btn-copy { background:#334155; }
+    .note { margin-top:12px; font-size:12px; color:#94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Complete UPI Payment</h2>
+    <p>Choose your UPI app or scan QR. After paying, return to Telegram Mini App.</p>
+    <div class="qr"><img src="${qrUrl}" alt="UPI QR" /></div>
+    <a class="btn btn-upi" href=${JSON.stringify(rawUri)}>🚀 Open Default UPI App</a>
+    <div class="grid">
+      <a class="btn btn-gpay" href=${JSON.stringify(gpayUri)}>Google Pay</a>
+      <a class="btn btn-pe" href=${JSON.stringify(phonepeUri)}>PhonePe</a>
+      <a class="btn btn-ptm" href=${JSON.stringify(paytmUri)}>Paytm</a>
+      <button class="btn btn-copy" onclick="copyUri()">📋 Copy Link</button>
+    </div>
+    <div class="note" id="msg">Opening UPI app automatically...</div>
+  </div>
+  <script>
+    const upiUri = ${JSON.stringify(rawUri)};
+    function copyUri() {
+      navigator.clipboard?.writeText(upiUri).then(() => {
+        document.getElementById('msg').textContent = '✅ UPI link copied!';
+      });
+    }
+    setTimeout(() => { window.location.href = upiUri; }, 250);
+  </script>
+</body>
+</html>`);
+});
+
 module.exports = router;
