@@ -123,16 +123,16 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		console.error('[Telegram Order Notify] Error:', e.message);
 	}
 }
-// Real geocoding helper for manual/text addresses (OpenStreetMap Nominatim)
+// Real geocoding helper (Photon + OpenStreetMap Nominatim for reliable cloud/Render resolution)
 const geocodeAddress = async (queries = []) => {
 	const expanded = [];
 	for (const q of queries) {
 		if (!q || !q.trim()) continue;
-		expanded.push(q.trim());
-		// Also try locality tail (e.g. "Riddhi gym kela mandi bazar samiti, Patna, India" -> "bazar samiti, Patna, India")
-		const parts = q.split(',').map((p) => p.trim()).filter(Boolean);
+		const cleanQ = q.trim();
+		expanded.push(cleanQ);
+		const parts = cleanQ.split(',').map((p) => p.trim()).filter(Boolean);
 		if (parts.length >= 2) {
-			const words = parts[0].split(/\s+/).filter((w) => w.length > 2 && !/^(floor|flat|room|house|no|near|opp|sector|block)$/i.test(w));
+			const words = parts[0].split(/\s+/).filter((w) => w.length > 2 && !/^(floor|flat|room|house|hostel|boys|girls|no|near|opp|sector|block)$/i.test(w));
 			if (words.length >= 2) {
 				expanded.push(`${words.slice(-2).join(' ')}, ${parts.slice(1).join(', ')}`);
 			}
@@ -145,16 +145,33 @@ const geocodeAddress = async (queries = []) => {
 	for (const q of expanded) {
 		if (seen.has(q)) continue;
 		seen.add(q);
+		// 1. Try Photon (OSM-based, no strict cloud IP rate-limit)
+		try {
+			const pResp = await axios.get('https://photon.komoot.io/api/', {
+				params: { q, limit: 1 },
+				timeout: 4500,
+			});
+			const feat = pResp.data?.features?.[0];
+			const coords = feat?.geometry?.coordinates;
+			if (Array.isArray(coords) && coords.length >= 2) {
+				const lng = parseFloat(coords[0]);
+				const lat = parseFloat(coords[1]);
+				if (lat && lng) {
+					const props = feat.properties || {};
+					return {
+						lat,
+						lng,
+						display: [props.name, props.street, props.district || props.city, props.state, props.country].filter(Boolean).join(', '),
+					};
+				}
+			}
+		} catch (e) {}
+
+		// 2. Fallback to Nominatim
 		try {
 			const resp = await axios.get('https://nominatim.openstreetmap.org/search', {
-				params: {
-					format: 'json',
-					limit: 1,
-					q
-				},
-				headers: {
-					'User-Agent': 'ToingProApp/1.0'
-				},
+				params: { format: 'json', limit: 1, countrycodes: 'in', q },
+				headers: { 'User-Agent': 'ToingProOrderApp/1.0 (https://github.com)' },
 				timeout: 4500,
 			});
 			const hit = resp.data?.[0];
@@ -162,7 +179,7 @@ const geocodeAddress = async (queries = []) => {
 				return {
 					lat: parseFloat(hit.lat),
 					lng: parseFloat(hit.lon),
-					display: hit.display_name || ''
+					display: hit.display_name || '',
 				};
 			}
 		} catch (e) {}
