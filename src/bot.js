@@ -2,6 +2,7 @@ const telegramModule = require('node-telegram-bot-api');
 const BotClass = telegramModule.Bot || telegramModule;
 const axios = require('axios');
 const { AccountRepo } = require('./models/Account');
+const { WalletRepo } = require('./models/Wallet');
 const { SettingsRepo, isAdminUser } = require('./models/Settings');
 
 let bot = null;
@@ -101,9 +102,26 @@ const initBot = (webAppUrl) => {
 
     // Register /start command
     bot.command('start', async (ctx) => {
-      const firstName = ctx.from?.first_name || 'User';
+      const tgUid = String(ctx.from?.id || 'default');
+      const [accounts, wallet, cfg] = await Promise.all([
+        AccountRepo.getAll(tgUid),
+        WalletRepo.getWallet(tgUid),
+        SettingsRepo.get(),
+      ]);
 
-      const welcomeText = `👋 Hello ${firstName}!\n\nWelcome to *Toing PRO* — Your automated multi-account manager & assistant for Swiggy Toing.\n\n✨ Features:\n• Multi-Account Manager (OTP & JSON import)\n• Live Address & Menu Search\n• Auto-Apply Best Coupons\n• Past Orders & Live Tracking\n• Referral & Reward Auto-Claim\n\nTap the button below to launch the Mini App!`;
+      const totalAccounts = (accounts || []).length;
+      const totalOrders = Number(wallet?.totalOrders || 0);
+      const balance = Number(wallet?.balance || 0);
+      const orderFee = Number(cfg?.orderFee ?? 3);
+
+      const welcomeText =
+        `🚀 *WELCOME TO TOING PRO ORDER BOT !*\n\n` +
+        `YOU CAN USE WEB MINI FOR ORDERS.\n\n` +
+        `📊 *STATS*\n` +
+        `• *TOTAL ACCOUNTS* : ${totalAccounts}\n` +
+        `• *TOTAL ORDERS* : ${totalOrders}\n` +
+        `• *BALANCE* : ₹${balance}\n` +
+        `• *ORDER FEES* : ₹${orderFee}`;
 
       const options = {
         parse_mode: 'Markdown',
