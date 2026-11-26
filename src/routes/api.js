@@ -627,8 +627,25 @@ router.post('/addresses/add-link', async (req, res) => {
 
 		const userCity = resolvedCity || active.addresses?.[0]?.city || 'Patna';
 		const displayAddress = resolvedText || rawInput;
+		const finalLat = lat || active.addresses?.[0]?.lat || 25.6074;
+		const finalLng = lng || active.addresses?.[0]?.lng || 85.1587;
+		let swiggyAddrId = '';
+		if (active.tid && active.token) {
+			const swAdd = await SwiggyService.addAddress({
+				name: resolvedName || active.userName || 'Delivery User',
+				phone: active.phone,
+				formatted_address: displayAddress,
+				flat_no: displayAddress.split(',')[0] || '',
+				area: resolvedArea || userCity,
+				city: userCity,
+				lat: finalLat,
+				lng: finalLng,
+				tag: 'OTHER',
+			}, active.tid, active.token, active.userId);
+			if (swAdd.success && swAdd.addressId) swiggyAddrId = swAdd.addressId;
+		}
 		const newAddress = {
-			id: 'addr_' + Date.now(),
+			id: swiggyAddrId || ('addr_' + Date.now()),
 			name: resolvedName || active.userName || 'Delivery User',
 			phone: `+91 ${active.phone}`,
 			address_line1: displayAddress,
@@ -636,8 +653,8 @@ router.post('/addresses/add-link', async (req, res) => {
 			address: displayAddress,
 			area: resolvedArea,
 			city: userCity,
-			lat: lat || active.addresses?.[0]?.lat || 25.6074,
-			lng: lng || active.addresses?.[0]?.lng || 85.1587,
+			lat: finalLat,
+			lng: finalLng,
 			tag: 'OTHER',
 			isAccountAddress: true,
 		};
@@ -683,15 +700,34 @@ router.post('/addresses/add-manual', async (req, res) => {
 				resolvedLng = geo.lng;
 			}
 		}
+		const finalLat = resolvedLat || active.addresses?.[0]?.lat || 25.6074;
+		const finalLng = resolvedLng || active.addresses?.[0]?.lng || 85.1587;
+		let swiggyAddrId = '';
+		if (active.tid && active.token) {
+			const swAdd = await SwiggyService.addAddress({
+				name: name || active.userName || 'Delivery User',
+				phone: phone || active.phone,
+				formatted_address: [addressLine1, addressLine2, targetCity, 'India'].filter(Boolean).join(', '),
+				flat_no: addressLine1 || 'Manual Address',
+				address_line2: addressLine2 || '',
+				landmark: addressLine2 || '',
+				area: addressLine2 || targetCity,
+				city: targetCity,
+				lat: finalLat,
+				lng: finalLng,
+				tag: tag || 'OTHER',
+			}, active.tid, active.token, active.userId);
+			if (swAdd.success && swAdd.addressId) swiggyAddrId = swAdd.addressId;
+		}
 		const newAddress = {
-			id: 'addr_' + Date.now(),
+			id: swiggyAddrId || ('addr_' + Date.now()),
 			name: name || active.userName || 'Delivery User',
 			phone: phone || `+91 ${active.phone}`,
 			address_line1: addressLine1 || 'Manual Address',
 			address_line2: addressLine2 || '',
 			city: targetCity,
-			lat: resolvedLat || active.addresses?.[0]?.lat || 25.6074,
-			lng: resolvedLng || active.addresses?.[0]?.lng || 85.1587,
+			lat: finalLat,
+			lng: finalLng,
 			tag: tag || 'OTHER',
 			isAccountAddress: true,
 		};
@@ -743,12 +779,39 @@ router.put('/addresses/:id', async (req, res) => {
 		if (geo) {
 			updatedFields.lat = geo.lat;
 			updatedFields.lng = geo.lng;
+		} else {
+			updatedFields.lat = base.lat || 25.6074;
+			updatedFields.lng = base.lng || 85.1587;
+		}
+
+		// Sync edited address to Swiggy so it gets a real Swiggy address_id (for cart delivery & order placement)
+		if (active.tid && active.token) {
+			const swAdd = await SwiggyService.addAddress({
+				name: updatedFields.name,
+				phone: updatedFields.mobile || updatedFields.phone,
+				formatted_address: [updatedFields.address_line1, updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
+				flat_no: updatedFields.flat_no || updatedFields.address_line1,
+				address_line2: updatedFields.address_line2,
+				landmark: updatedFields.landmark,
+				area: updatedFields.address_line2 || targetCity,
+				city: targetCity,
+				lat: updatedFields.lat,
+				lng: updatedFields.lng,
+				tag: updatedFields.tag,
+			}, active.tid, active.token, active.userId);
+			if (swAdd.success && swAdd.addressId) {
+				updatedFields.id = swAdd.addressId;
+			}
 		}
 
 		if (existing) {
 			await AccountRepo.updateAddress(active._id, req.params.id, updatedFields);
+			if (String(active.selectedAddressId) === String(req.params.id) && updatedFields.id !== req.params.id) {
+				await AccountRepo.setSelectedAddress(active._id, updatedFields.id);
+			}
 		} else {
 			await AccountRepo.addAddress(active._id, updatedFields);
+			await AccountRepo.setSelectedAddress(active._id, updatedFields.id);
 		}
 		res.json({ success: true, message: 'Address updated successfully!', address: { ...base, ...updatedFields } });
 	} catch (err) {

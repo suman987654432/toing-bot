@@ -207,6 +207,103 @@ const SwiggyService = {
 			};
 		}
 	},
+	// Add New Address on Swiggy (Exact protobuf schema from maps.swiggy.com/addresses/v1 HAR)
+	async addAddress(addrData = {}, tid = '', token = '', userId = '') {
+		const url = `https://maps.swiggy.com/addresses/v1`;
+		const pbVarint = (n) => {
+			let v = BigInt(n);
+			const out = [];
+			while (v >= 0x80n) {
+				out.push(Number((v & 0x7fn) | 0x80n));
+				v >>= 7n;
+			}
+			out.push(Number(v));
+			return Buffer.from(out);
+		};
+		const pbFieldVarint = (fn, n) => Buffer.concat([pbVarint((fn << 3) | 0), pbVarint(n)]);
+		const pbFieldBytes = (fn, buf) => Buffer.concat([pbVarint((fn << 3) | 2), pbVarint(buf.length), buf]);
+		const pbFieldStr = (fn, s) => (s ? pbFieldBytes(fn, Buffer.from(String(s), 'utf8')) : Buffer.alloc(0));
+		const pbFieldDouble = (fn, val) => {
+			const b = Buffer.alloc(8);
+			b.writeDoubleLE(Number(val), 0);
+			return Buffer.concat([pbVarint((fn << 3) | 1), b]);
+		};
+
+		const lat = Number(addrData.lat || 25.6074);
+		const lng = Number(addrData.lng || 85.1587);
+		const cleanPhone = String(addrData.phone || addrData.mobile || '').replace(/\D/g, '').slice(-10);
+		const recName = String(addrData.name || 'Customer').trim();
+		const tagStr = String(addrData.tag || 'OTHER').toUpperCase();
+		const tagCode = tagStr === 'HOME' ? 1 : (tagStr === 'WORK' ? 2 : 3);
+
+		const ctxMsg = Buffer.concat([
+			pbFieldVarint(1, 1),
+			pbFieldBytes(3, Buffer.concat([pbFieldStr(1, 'cart_screen'), pbFieldStr(2, 'android-consumer-app')])),
+		]);
+		const entityMsg = Buffer.concat([
+			pbFieldVarint(1, 1),
+			pbFieldStr(2, String(userId || '')),
+		]);
+		const locMsg = Buffer.concat([pbFieldDouble(1, lat), pbFieldDouble(2, lng)]);
+		const recMsg = Buffer.concat([pbFieldStr(1, recName), pbFieldStr(2, cleanPhone)]);
+		const addrMsg = Buffer.concat([
+			pbFieldStr(1, addrData.formatted_address || addrData.address || addrData.address_line1 || 'Delivery Address'),
+			pbFieldStr(2, addrData.flat_no || addrData.address_line1 || ''),
+			pbFieldStr(7, addrData.area || addrData.address_line2 || addrData.city || ''),
+			pbFieldStr(9, addrData.city || 'Patna'),
+			pbFieldStr(12, addrData.pincode || ''),
+			pbFieldBytes(14, locMsg),
+			pbFieldStr(17, addrData.landmark || addrData.address_line2 || ''),
+			pbFieldStr(21, addrData.locality || addrData.area || ''),
+			pbFieldVarint(22, 1),
+			pbFieldStr(24, cleanPhone),
+			pbFieldStr(29, addrData.address_line2 || ''),
+			pbFieldBytes(33, pbFieldVarint(1, tagCode)),
+			pbFieldBytes(34, recMsg),
+			pbFieldBytes(36, pbFieldBytes(2, Buffer.alloc(0))),
+			pbFieldStr(38, addrData.tagLabel || tagStr),
+		]);
+		const payload = Buffer.concat([
+			pbFieldBytes(1, ctxMsg),
+			pbFieldBytes(2, entityMsg),
+			pbFieldBytes(3, addrMsg),
+			pbFieldVarint(4, 1),
+		]);
+
+		try {
+			const response = await axios.post(url, payload, {
+				headers: buildDiscHeaders(tid, token, {
+					'content-type': 'application/x-protobuf',
+					'accept': 'application/x-protobuf',
+					'latitude': String(lat),
+					'longitude': String(lng),
+				}),
+				responseType: 'arraybuffer',
+				timeout: 12000,
+			});
+			const buf = Buffer.from(response.data || []);
+			// Field 1 (tag 0x0a) is the newly created Swiggy address_id string
+			let addressId = '';
+			if (buf.length > 2 && buf[0] === 0x0a) {
+				let len = 0, shift = 0, idx = 1;
+				while (idx < buf.length) {
+					const b = buf[idx++];
+					len |= (b & 0x7f) << shift;
+					if (!(b & 0x80)) break;
+					shift += 7;
+				}
+				if (len > 0 && idx + len <= buf.length) {
+					addressId = buf.slice(idx, idx + len).toString('utf8');
+				}
+			}
+			return { success: Boolean(addressId), addressId };
+		} catch (error) {
+			return {
+				success: false,
+				error: error.response?.data ? Buffer.from(error.response.data).toString('utf8') : error.message,
+			};
+		}
+	},
 	// Delete Address (Discovered from toing_orders.har)
 	async deleteAddress(addressId, tid, token) {
 		const url = `https://maps.swiggy.com/addresses/v1/${addressId}`;
