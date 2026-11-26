@@ -169,14 +169,28 @@ const getTgUserId = (req) => {
 	const raw = req.headers['x-tg-user-id'] || req.query?.tgUserId || req.body?.tgUserId || 'default';
 	return String(raw).trim() || 'default';
 };
+// Extract Swiggy numeric user_id from tid JWT if missing on account
+const extractUserIdFromTid = (tid = '') => {
+	try {
+		const parts = String(tid).split('.');
+		if (parts.length >= 2) {
+			const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+			if (payload && payload.user_id) return String(payload.user_id);
+		}
+	} catch (e) {}
+	return '';
+};
 // Helper to get active account credentials for the requesting Telegram user
 const getActiveCreds = async (tgUserId = 'default') => {
 	const active = await AccountRepo.getActive(tgUserId);
+	const tid = active?.tid || '';
+	const userId = active?.userId || extractUserIdFromTid(tid);
+	if (active && userId && !active.userId) active.userId = userId;
 	return {
 		active,
-		tid: active?.tid || '',
+		tid,
 		token: active?.token || '',
-		userId: active?.userId || '',
+		userId,
 	};
 };
 /* =========================================
