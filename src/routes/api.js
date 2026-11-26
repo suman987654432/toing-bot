@@ -129,16 +129,20 @@ const geocodeAddress = async (queries = []) => {
 	for (const q of queries) {
 		if (!q || !q.trim()) continue;
 		const cleanQ = q.trim();
-		expanded.push(cleanQ);
 		const parts = cleanQ.split(',').map((p) => p.trim()).filter(Boolean);
 		if (parts.length >= 2) {
 			const words = parts[0].split(/\s+/).filter((w) => w.length > 2 && !/^(floor|flat|room|house|hostel|boys|girls|no|near|opp|sector|block)$/i.test(w));
-			if (words.length >= 2) {
+			// When full line has many words (e.g. "sanskaram boys hostel ratnagiri bhopal"), try the locality tail first so geocoder doesn't fuzzy-match a distant outskirt
+			if (words.length > 3) {
 				expanded.push(`${words.slice(-2).join(' ')}, ${parts.slice(1).join(', ')}`);
-			}
-			if (words.length >= 3) {
 				expanded.push(`${words.slice(-3).join(' ')}, ${parts.slice(1).join(', ')}`);
 			}
+			expanded.push(cleanQ);
+			if (words.length >= 2 && words.length <= 3) {
+				expanded.push(`${words.slice(-2).join(' ')}, ${parts.slice(1).join(', ')}`);
+			}
+		} else {
+			expanded.push(cleanQ);
 		}
 	}
 	const seen = new Set();
