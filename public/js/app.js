@@ -174,6 +174,7 @@ function switchTab(tabName) {
       if (cartItemCount > 0) stickyPayBar.classList.remove('hidden');
       else stickyPayBar.classList.add('hidden');
     }
+    loadPaymentOptions();
   } else {
     if (stickyPayBar) stickyPayBar.classList.add('hidden');
     updateFloatingCartBar();
@@ -552,9 +553,43 @@ async function loadAddresses(forceRefresh = false) {
   }
 }
 
+function formatFullAddress(addr) {
+  if (!addr) return '';
+  if (typeof addr === 'string') return addr;
+  const parts = [];
+  const seenParts = new Set();
+  const pushPart = (val) => {
+    const s = String(val || '').trim();
+    if (!s) return;
+    const low = s.toLowerCase();
+    if (seenParts.has(low)) return;
+    seenParts.add(low);
+    parts.push(s);
+  };
+  pushPart(addr.flat_no);
+  pushPart(addr.landmark);
+  pushPart(addr.address_line1);
+  pushPart(addr.address_line2);
+  if (addr.address && !parts.some((p) => addr.address.toLowerCase().includes(p.toLowerCase()))) {
+    pushPart(addr.address);
+  } else if (!addr.address_line1 && addr.address) {
+    pushPart(addr.address);
+  }
+  if (parts.length === 0) {
+    pushPart(addr.area);
+    pushPart(addr.city);
+    pushPart('India');
+  } else if (addr.city && !parts.join(' ').toLowerCase().includes(addr.city.toLowerCase())) {
+    pushPart(addr.city);
+  }
+  return parts.join(', ');
+}
+
 function updateDeliveryBanner() {
   if (state.selectedAddress) {
-    selectedAddressLabel.textContent = `${state.selectedAddress.name} • ${state.selectedAddress.city || 'Patna'}`;
+    const shortArea = state.selectedAddress.flat_no || state.selectedAddress.area || state.selectedAddress.city || 'Patna';
+    selectedAddressLabel.textContent = `${state.selectedAddress.name || 'User'} • ${shortArea}`;
+    selectedAddressLabel.title = formatFullAddress(state.selectedAddress);
   } else {
     selectedAddressLabel.textContent = 'Select Delivery Address';
   }
@@ -575,35 +610,7 @@ function renderAddressesList() {
     const name = (addr.name || (state.activeAccount ? (state.activeAccount.userName || 'User') : 'User')).trim();
     const rawPhone = String(addr.phone || addr.mobile || (state.activeAccount ? state.activeAccount.phone : '')).trim();
     const phone = rawPhone ? (rawPhone.startsWith('+') ? rawPhone : `+91 ${rawPhone.replace(/^91/, '')}`) : '';
-
-    // Build full detailed address from both Swiggy raw login schema (flat_no, landmark, address, area, city) and manual schema
-    const parts = [];
-    const seenParts = new Set();
-    const pushPart = (val) => {
-      const s = String(val || '').trim();
-      if (!s) return;
-      const low = s.toLowerCase();
-      if (seenParts.has(low)) return;
-      seenParts.add(low);
-      parts.push(s);
-    };
-    pushPart(addr.flat_no);
-    pushPart(addr.landmark);
-    pushPart(addr.address_line1);
-    pushPart(addr.address_line2);
-    if (addr.address && !parts.some((p) => addr.address.toLowerCase().includes(p.toLowerCase()))) {
-      pushPart(addr.address);
-    } else if (!addr.address_line1 && addr.address) {
-      pushPart(addr.address);
-    }
-    if (parts.length === 0) {
-      pushPart(addr.area);
-      pushPart(addr.city);
-      pushPart('India');
-    } else if (addr.city && !parts.join(' ').toLowerCase().includes(addr.city.toLowerCase())) {
-      pushPart(addr.city);
-    }
-    const fullText = parts.join(', ');
+    const fullText = formatFullAddress(addr);
 
     html += `
       <div class="addr-card-item ${isSelected ? 'is-selected' : ''}" onclick="selectDeliveryAddress('${addr.id}')">
@@ -1401,16 +1408,10 @@ function updateCartView() {
   const cartAddressTitle = document.getElementById('cartAddressTitle');
   const cartAddressSub = document.getElementById('cartAddressSub');
   if (state.selectedAddress) {
-    const rawTag = (state.selectedAddress.tag || 'Home').toLowerCase();
+    const rawTag = String(state.selectedAddress.tag || state.selectedAddress.annotation || 'Home').toLowerCase();
     const capitalizedTag = rawTag.charAt(0).toUpperCase() + rawTag.slice(1);
     if (cartAddressTitle) cartAddressTitle.textContent = `Delivering to ${capitalizedTag}`;
-    const fullAddr = [
-      state.selectedAddress.tag ? state.selectedAddress.tag.toLowerCase() : '',
-      state.selectedAddress.name || '',
-      state.selectedAddress.address_line1 || '',
-      state.selectedAddress.address_line2 || '',
-      state.selectedAddress.city || ''
-    ].filter(Boolean).join(', ');
+    const fullAddr = formatFullAddress(state.selectedAddress);
     if (cartAddressSub) {
       cartAddressSub.textContent = fullAddr || 'Selected Address';
       cartAddressSub.title = fullAddr;
@@ -1593,13 +1594,79 @@ function refreshBillDetails() {
 
 function setCartPaymentMethod(method) {
   state.cart.paymentMethod = method;
-  const upiBox = document.getElementById('optPayUPI');
-  if (upiBox) {
-    if (method === 'UPIIntent') {
-      upiBox.classList.add('selected');
-    } else {
-      upiBox.classList.remove('selected');
+  renderDynamicPaymentOptions();
+}
+
+async function loadPaymentOptions() {
+  const container = document.getElementById('dynamicPaymentMethodsList');
+  if (!container) return;
+
+  container.innerHTML = '<div class="skeleton-spinner-row"><div class="mini-spinner"></div><span>Loading live payment options from Swiggy...</span></div>';
+  try {
+    const addrId = state.selectedAddress?.id || '';
+    const res = await fetch(`/api/payment-options${addrId ? '?addressId=' + encodeURIComponent(addrId) : ''}`);
+    const data = await res.json();
+
+    if (!data.success || !Array.isArray(data.groups) || data.groups.length === 0) {
+      container.innerHTML = `<div class="empty-hint" style="padding:12px;">${data.error || 'No live payment options returned. Please login & select an address.'}</div>`;
+      return;
     }
+
+    state.paymentGroups = data.groups;
+    state.codEnabled = Boolean(data.codEnabled);
+
+    // Default to first enabled method if current isn't in list
+    const allMethods = data.groups.flatMap((g) => g.methods || []);
+    if (!allMethods.some((m) => m.payment_code === state.cart.paymentMethod && m.enabled)) {
+      const firstEnabled = allMethods.find((m) => m.enabled);
+      if (firstEnabled) state.cart.paymentMethod = firstEnabled.payment_code;
+    }
+
+    renderDynamicPaymentOptions();
+  } catch (e) {
+    container.innerHTML = '<div class="empty-hint" style="padding:12px;">Failed to load live payment options.</div>';
+  }
+}
+
+function renderDynamicPaymentOptions() {
+  const container = document.getElementById('dynamicPaymentMethodsList');
+  const upiWrap = document.getElementById('upiCollectInputWrap');
+  if (!container) return;
+
+  const groups = state.paymentGroups || [];
+  if (groups.length === 0) return;
+
+  let html = '';
+  groups.forEach((grp) => {
+    html += `<div style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px; margin:10px 0 6px;">${grp.display_name}</div>`;
+    (grp.methods || []).forEach((m) => {
+      const code = m.payment_code || m.name;
+      const isSelected = state.cart.paymentMethod === code;
+      const isDisabled = !m.enabled;
+      html += `
+        <div class="pay-opt-box ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}" onclick="${isDisabled ? '' : `setCartPaymentMethod('${code.replace(/'/g, "\\'")}')`}">
+          <div class="pay-opt-icon-wrap" style="overflow:hidden;">
+            ${m.icon_url ? `<img src="${m.icon_url}" alt="" style="width:22px; height:22px; object-fit:contain;" onerror="this.style.display='none';" />` : `<span style="font-size:16px;">💳</span>`}
+          </div>
+          <div class="pay-opt-info">
+            <div class="pay-opt-name" style="${isDisabled ? 'color:var(--text-muted);' : ''}">${m.display_name}</div>
+            ${m.subtitle ? `<div class="pay-opt-desc">${m.subtitle}</div>` : ''}
+          </div>
+          ${isSelected ? `
+            <div class="pay-opt-check">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#10b981"><circle cx="12" cy="12" r="10"></circle><polyline points="8 12 11 15 16 9" stroke="#fff" stroke-width="2.5" fill="none"></polyline></svg>
+            </div>
+          ` : '<div class="pay-opt-radio-empty"></div>'}
+        </div>
+      `;
+    });
+  });
+
+  container.innerHTML = html;
+
+  if (upiWrap) {
+    const pm = String(state.cart.paymentMethod || '').toUpperCase();
+    upiWrap.style.display = pm.includes('UPI') ? 'block' : 'none';
   }
 }
 
@@ -1709,7 +1776,7 @@ async function handlePlaceOrder() {
         restaurantId: state.cart.restaurantId,
         restaurantName: state.cart.restaurantName,
         total,
-        address: state.selectedAddress?.address || state.selectedAddress?.address_line1 || 'Delivery Address',
+        address: formatFullAddress(state.selectedAddress) || 'Delivery Address',
         couponCode: state.cart.couponCode,
         paymentMethod: upiVpa ? 'UPI' : payMethod,
         upiVpa,
@@ -1719,14 +1786,22 @@ async function handlePlaceOrder() {
 
     const data = await res.json();
     if (data.success && data.order_id) {
-      openPaymentFlowModal({
-        orderId: data.order_id,
-        paasId: data.paas_id || '',
-        amount: data.amount || total,
-        upiUri: data.upi_uri || '',
-        paymentCode: data.payment_code || 'UPIIntent',
-        upiVpa,
-      });
+      const pmUp = String(data.payment_code || payMethod || '').toUpperCase();
+      if (pmUp === 'CASH' || pmUp === 'COD') {
+        showToast(`🎉 Order #${data.order_id} Placed (Pay on Delivery)!`);
+        clearCartAfterOrder();
+        switchTab('orders');
+        fetchOrders();
+      } else {
+        openPaymentFlowModal({
+          orderId: data.order_id,
+          paasId: data.paas_id || '',
+          amount: data.amount || total,
+          upiUri: data.upi_uri || '',
+          paymentCode: data.payment_code || 'UPIIntent',
+          upiVpa,
+        });
+      }
     } else {
       showToast(data.error || 'Failed to initiate payment on Swiggy', true);
     }

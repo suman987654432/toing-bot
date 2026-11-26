@@ -831,20 +831,54 @@ const SwiggyService = {
 	/* ==========================================================
 	   5. ORDERS & CHECKOUT (Direct payments.swiggy.com & chkout.swiggy.com)
 	   ========================================================== */
-	// Get Payment Options (from pay_toing.har)
-	async getPaymentOptions(amount, tid = '', token = '', userId = '') {
+	// Get Payment Options (1:1 pay_toing.har)
+	async getPaymentOptions(addressId = '', tid = '', token = '', userId = '') {
 		const url = `https://payments.swiggy.com/api/v3/payment/get-payment-options`;
+		const payload = {
+			address_id: String(addressId || ''),
+			card_details: true,
+			is_user_cred_eligible: false,
+			is_user_eligible_for_single_click: false,
+			without_split_pay: false,
+			split_pay_methods: 'default',
+			is_gifting_flow: false,
+			is_inapp_upi_eligible: false,
+			apple_pay_eligibility: '',
+			bill_to_company_toggle: false,
+		};
 		try {
-			const response = await axios.post(url, {
-				amount: Number(amount || 0),
-				cart_type: 'REGULAR',
-			}, {
+			const response = await axios.post(url, payload, {
 				headers: buildPaymentHeaders(tid, token, userId),
-				timeout: 10000,
+				timeout: 12000,
 			});
-			return { success: true, data: response.data };
+			const d = response.data?.data || {};
+			const rawGroups = Array.isArray(d.payment_group) ? d.payment_group : [];
+			const groups = rawGroups.map((g) => ({
+				group_name: g.group_name || '',
+				display_name: g.display_name || g.group_name || '',
+				methods: (g.payment_methods || []).map((m) => ({
+					name: m.name || '',
+					display_name: m.display_name || m.name || '',
+					payment_code: m.payment_code || '',
+					enabled: m.enabled !== false,
+					subtitle: m.meta?.promo_msg || m.meta?.subtitle || m.meta?.disable_message || '',
+					icon_url: m.meta?.icon_url || '',
+				})),
+			})).filter((g) => g.methods.length > 0);
+			return {
+				success: response.data?.statusCode === 0,
+				codEnabled: Boolean(d.codEnabled),
+				paymentAmount: d.payment_amount || 0,
+				groups,
+				data: response.data,
+			};
 		} catch (error) {
-			return { success: false, error: error.response?.data || error.message };
+			return {
+				success: false,
+				codEnabled: false,
+				groups: [],
+				error: error.response?.data?.statusMessage || error.message,
+			};
 		}
 	},
 	// Place Order (1:1 pay_toing.har)

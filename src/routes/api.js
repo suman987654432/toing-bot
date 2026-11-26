@@ -650,6 +650,33 @@ router.get('/menu/:restaurantId', async (req, res) => {
 /* =========================================
    4. CART & COUPONS (DIRECT LIVE SWIGGY APIS)
    ========================================= */
+router.get('/payment-options', async (req, res) => {
+	try {
+		const {
+			active,
+			tid,
+			token,
+			userId
+		} = await getActiveCreds(getTgUserId(req));
+		if (!tid || !token) {
+			return res.json({
+				success: false,
+				error: 'Login required to fetch payment options',
+				groups: []
+			});
+		}
+		const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+		const addressId = req.query.addressId || selected?.id || '';
+		const result = await SwiggyService.getPaymentOptions(addressId, tid, token, userId);
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message,
+			groups: []
+		});
+	}
+});
 router.post('/cart/update', async (req, res) => {
 	try {
 		const {
@@ -778,6 +805,7 @@ router.get('/orders', async (req, res) => {
 					if (tid || token) {
 						try {
 							const selAddr = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+							const fallbackAddrStr = selAddr ? [selAddr.flat_no, selAddr.landmark, selAddr.address, selAddr.address_line1, selAddr.city].filter(Boolean).join(', ') : 'Delivery Address';
 							const oLat = selAddr?.lat || 25.6074;
 							const oLng = selAddr?.lng || 85.1587;
 							const sOrders = await SwiggyService.getOrders(10, tid, token, oLat, oLng);
@@ -788,7 +816,7 @@ router.get('/orders', async (req, res) => {
 									restaurant_name: ord.restaurant_name || 'Restaurant',
 									order_total: String(ord.order_total || '0'),
 									order_status: (ord.order_status || 'DELIVERED').toUpperCase(),
-									delivery_address: ord.delivery_address?.address || ord.delivery_address || active?.addresses?.[0]?.address_line1 || 'Delivery Address',
+									delivery_address: ord.delivery_address?.address || ord.delivery_address || fallbackAddrStr,
 									order_time: ord.order_time || 'Past Order',
 									items: (ord.items || ord.order_items || []).map((it) => ({
 										name: it.name,
