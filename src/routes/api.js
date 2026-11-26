@@ -940,9 +940,11 @@ router.post('/cart/update', async (req, res) => {
 		const deliveryRow = (d.rendering_details || []).find(
 			(r) => /delivery/i.test(String(r.key || '')) || /delivery fee/i.test(String(r.display_text || ''))
 		);
+		const itemTotalRow = (d.rendering_details || []).find((r) => r.key === 'item_total');
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined)
 			? {
 				itemTotal: Number(d.cart_subtotal ?? d.item_total ?? 0),
+				strikeOffItemTotal: itemTotalRow?.intermediateText || '',
 				deliveryFee: Number(d.delivery_charges ?? 0),
 				deliveryLabel: deliveryRow?.display_text || '',
 				deliveryStrikeOff: deliveryRow?.intermediateText || '',

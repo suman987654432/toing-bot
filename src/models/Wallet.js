@@ -235,6 +235,95 @@ const WalletRepo = {
     });
     return { success: true, balance: w.balance };
   },
+
+  async adminAdjustBalance(tgUserId, delta, reason = '') {
+    const uid = normUid(tgUserId);
+    const num = Math.round(Number(delta || 0) * 100) / 100;
+    if (!uid || !num || isNaN(num)) {
+      return { success: false, error: 'Invalid user ID or amount' };
+    }
+
+    const isCredit = num > 0;
+    const absAmt = Math.abs(num);
+    const desc = reason || (isCredit ? 'Admin Wallet Credit' : 'Admin Wallet Debit');
+
+    if (mongoose.connection.readyState === 1) {
+      const current = await this.getWallet(uid);
+      const curBal = Number(current.balance || 0);
+      const actualDelta = isCredit ? absAmt : -Math.min(curBal, absAmt);
+      const nextBal = Math.round((curBal + actualDelta) * 100) / 100;
+
+      await WalletModel.findOneAndUpdate(
+        { telegramUserId: uid },
+        { $set: { balance: nextBal } },
+        { new: true, upsert: true }
+      );
+      await WalletTxnModel.create({
+        telegramUserId: uid,
+        type: isCredit ? 'CREDIT' : 'DEBIT',
+        amount: Math.abs(actualDelta),
+        description: desc,
+      });
+      return { success: true, balance: nextBal, adjusted: actualDelta };
+    }
+
+    const w = await this.getWallet(uid);
+    const curBal = Number(w.balance || 0);
+    const actualDelta = isCredit ? absAmt : -Math.min(curBal, absAmt);
+    w.balance = Math.round((curBal + actualDelta) * 100) / 100;
+    memTxns.unshift({
+      telegramUserId: uid,
+      type: isCredit ? 'CREDIT' : 'DEBIT',
+      amount: Math.abs(actualDelta),
+      description: desc,
+      createdAt: new Date().toISOString(),
+    });
+    return { success: true, balance: w.balance, adjusted: actualDelta };
+  },
+
+  async listUsers(page = 1, limit = 6) {
+    const p = Math.max(1, Number(page || 1));
+    const lim = Math.max(1, Number(limit || 6));
+
+    if (mongoose.connection.readyState === 1) {
+      const [totalUsers, users, agg] = await Promise.all([
+        WalletModel.countDocuments({}),
+        WalletModel.find({}).sort({ updatedAt: -1 }).skip((p - 1) * lim).limit(lim).lean(),
+        WalletModel.aggregate([
+          {
+            $group: {
+              _id: null,
+              totalBalance: { $sum: '$balance' },
+              totalOrders: { $sum: '$totalOrders' },
+            },
+          },
+        ]),
+      ]);
+      const totals = agg?.[0] || { totalBalance: 0, totalOrders: 0 };
+      return {
+        users,
+        totalUsers,
+        totalBalance: Math.round(Number(totals.totalBalance || 0) * 100) / 100,
+        totalOrders: Number(totals.totalOrders || 0),
+        page: p,
+        totalPages: Math.max(1, Math.ceil(totalUsers / lim)),
+      };
+    }
+
+    const all = Array.from(memWallets.values());
+    const totalUsers = all.length;
+    const totalBalance = Math.round(all.reduce((s, u) => s + Number(u.balance || 0), 0) * 100) / 100;
+    const totalOrders = all.reduce((s, u) => s + Number(u.totalOrders || 0), 0);
+    const users = all.slice((p - 1) * lim, p * lim);
+    return {
+      users,
+      totalUsers,
+      totalBalance,
+      totalOrders,
+      page: p,
+      totalPages: Math.max(1, Math.ceil(totalUsers / lim)),
+    };
+  },
 };
 
 module.exports = { Wallet: WalletModel, WalletTransaction: WalletTxnModel, WalletRepo };

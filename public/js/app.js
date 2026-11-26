@@ -1266,8 +1266,8 @@ function confirmCustomiseAddToCart() {
   state.cart.restaurantId = rest.id;
   state.cart.restaurantName = rest.name;
   state.cart.restaurantArea = rest.area || rest.locality || '';
-  state.cart.restaurantSla = rest.deliveryTime || rest.slaString || '25-30 mins';
-  state.cart.restaurantDistance = rest.distance || '2.1 kms';
+  state.cart.restaurantSla = rest.deliveryTime || rest.slaString || '';
+  state.cart.restaurantDistance = rest.distance || '';
   state.cart.restaurantImage = rest.imageUrl || '';
 
   const selectedAddons = [];
@@ -1338,8 +1338,8 @@ function handleAddToCart(itemId) {
   state.cart.restaurantId = rest.id;
   state.cart.restaurantName = rest.name;
   state.cart.restaurantArea = rest.area || rest.locality || '';
-  state.cart.restaurantSla = rest.deliveryTime || rest.slaString || '25-30 mins';
-  state.cart.restaurantDistance = rest.distance || '2.1 kms';
+  state.cart.restaurantSla = rest.deliveryTime || rest.slaString || '';
+  state.cart.restaurantDistance = rest.distance || '';
   state.cart.restaurantImage = rest.imageUrl || '';
   if (state.cart.items[item.id]) {
     state.cart.items[item.id].quantity += 1;
@@ -1482,9 +1482,9 @@ function updateCartView() {
   const restSub = document.getElementById('cartRestSubSla');
   if (restTitle) restTitle.textContent = state.cart.restaurantName || 'Restaurant';
   if (restSub) {
-    const area = state.cart.restaurantArea || 'BHEL';
-    const sla = state.cart.restaurantSla || '25-30 mins';
-    restSub.textContent = `${area} • ${sla}`;
+    const area = state.cart.restaurantArea || '';
+    const sla = state.cart.restaurantSla || '';
+    restSub.textContent = [area, sla].filter(Boolean).join(' • ');
   }
   if (restLogo && state.cart.restaurantImage) {
     restLogo.src = state.cart.restaurantImage;
@@ -1552,44 +1552,51 @@ let cartBillSyncKey = '';
 
 function renderCartBill(rawItemTotal) {
   const live = state.cart.liveBill;
-  const origItemTotal = (rawItemTotal * 1.25).toFixed(2);
-  const deliveryDistance = state.cart.restaurantDistance || '2.1 kms';
-  const deliveryFee = live ? Number(live.deliveryFee || 0) : 25;
-  const taxes = live ? Number(live.taxes || 0) : 5.2;
+  const deliveryFee = live ? Number(live.deliveryFee || 0) : null;
+  const taxes = live ? Number(live.taxes || 0) : null;
 
-  let couponDiscount = state.cart.discount || 0;
-  if (state.cart.couponCode) {
-    const code = state.cart.couponCode.toUpperCase();
-    if (code === 'PAYTMNEW') couponDiscount = Math.min(rawItemTotal, 125);
-    else if (code === 'PAYTMUPI') couponDiscount = Math.min(rawItemTotal, 50);
-    else if (code === 'AXIS150') couponDiscount = Math.min(rawItemTotal, 150);
-    else if (code === 'VISAPLATINUMDC') couponDiscount = Math.min(rawItemTotal, 30);
-    else if (code === 'VISACLASSICDC') couponDiscount = Math.min(rawItemTotal, 25);
-    else if (code === 'AMAZONPAYBALANCE' || code === 'MBKWALLET') couponDiscount = Math.min(rawItemTotal, 50);
+  const couponDiscount = (live && live.couponDiscount > 0)
+    ? Number(live.couponDiscount)
+    : Number(state.cart.discount || 0);
+  if (state.cart.couponCode && couponDiscount > 0) {
     state.cart.discount = couponDiscount;
   }
 
   const fcDiscount = state.cart.fcClaimed ? 50 : 0;
-  const toPay = Math.max(0, Math.round(rawItemTotal + deliveryFee + taxes - couponDiscount - fcDiscount));
+  const toPay = live && live.orderTotal > 0 && !state.cart.fcManuallyToggled && !state.cart.couponCode
+    ? Math.max(0, Math.round(Number(live.orderTotal) - fcDiscount))
+    : Math.max(0, Math.round(rawItemTotal + (deliveryFee || 0) + (taxes || 0) - couponDiscount - fcDiscount));
 
   const origTotalEl = document.getElementById('billOrigItemTotal');
-  if (origTotalEl) origTotalEl.textContent = `₹${origItemTotal}`;
+  if (origTotalEl) {
+    if (live && live.strikeOffItemTotal) {
+      origTotalEl.textContent = `₹${live.strikeOffItemTotal}`;
+      origTotalEl.style.display = '';
+    } else {
+      origTotalEl.textContent = '';
+      origTotalEl.style.display = 'none';
+    }
+  }
   document.getElementById('billItemTotal').textContent = `₹${rawItemTotal.toFixed(2)}`;
 
   const delivLabel = document.getElementById('billDeliveryLabel');
   if (delivLabel) {
-    delivLabel.textContent = (live && live.deliveryLabel) ? live.deliveryLabel : `Delivery Fee ${deliveryDistance}`;
+    delivLabel.textContent = (live && live.deliveryLabel)
+      ? live.deliveryLabel
+      : (state.cart.restaurantDistance ? `Delivery Fee ${state.cart.restaurantDistance}` : 'Delivery Fee');
   }
   const delivFeeEl = document.getElementById('billDeliveryFee');
   if (delivFeeEl) {
-    if (live && deliveryFee === 0) {
+    if (deliveryFee === null) {
+      delivFeeEl.textContent = '...';
+    } else if (deliveryFee === 0) {
       const strike = live.deliveryStrikeOff ? `<span style="text-decoration:line-through; color:var(--text-muted); margin-right:4px;">₹${live.deliveryStrikeOff}</span>` : '';
       delivFeeEl.innerHTML = `${strike}<span style="color:#16a34a; font-weight:700;">FREE</span>`;
     } else {
       delivFeeEl.textContent = `₹${deliveryFee}`;
     }
   }
-  document.getElementById('billTaxes').textContent = `₹${taxes}`;
+  document.getElementById('billTaxes').textContent = taxes === null ? '...' : `₹${taxes}`;
 
   // Coupon discount row
   const discRow = document.getElementById('billDiscountRow');
@@ -1844,8 +1851,8 @@ async function handlePlaceOrder() {
   }
 
   const itemTotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const deliveryFee = state.cart.liveBill ? Number(state.cart.liveBill.deliveryFee || 0) : 25;
-  const taxes = state.cart.liveBill ? Number(state.cart.liveBill.taxes || 0) : 5.2;
+  const deliveryFee = state.cart.liveBill ? Number(state.cart.liveBill.deliveryFee || 0) : 0;
+  const taxes = state.cart.liveBill ? Number(state.cart.liveBill.taxes || 0) : 0;
   const fcDiscount = state.cart.fcClaimed ? 50 : 0;
   const total = Math.max(0, Math.round(itemTotal + deliveryFee + taxes - (state.cart.discount || 0) - fcDiscount));
   const payMethod = state.cart.paymentMethod || 'UPIIntent';

@@ -18,6 +18,20 @@ const settingsSchema = new mongoose.Schema(
       default: 15,
       min: 1,
     },
+    forceJoinEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    forceJoinChannel: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    forceJoinUrl: {
+      type: String,
+      default: '',
+      trim: true,
+    },
   },
   { timestamps: true }
 );
@@ -33,7 +47,18 @@ let memSettings = {
   key: 'app_config',
   orderFee: 3,
   minDeposit: 15,
+  forceJoinEnabled: false,
+  forceJoinChannel: '',
+  forceJoinUrl: '',
 };
+
+const formatSettings = (doc) => ({
+  orderFee: Number(doc?.orderFee ?? 3),
+  minDeposit: Number(doc?.minDeposit ?? 15),
+  forceJoinEnabled: Boolean(doc?.forceJoinEnabled),
+  forceJoinChannel: String(doc?.forceJoinChannel || ''),
+  forceJoinUrl: String(doc?.forceJoinUrl || ''),
+});
 
 const SettingsRepo = {
   async get() {
@@ -42,24 +67,27 @@ const SettingsRepo = {
       if (!doc) {
         doc = await SettingsModel.create({ key: 'app_config', orderFee: 3, minDeposit: 15 });
       }
-      return {
-        orderFee: Number(doc.orderFee ?? 3),
-        minDeposit: Number(doc.minDeposit ?? 15),
-      };
+      return formatSettings(doc);
     }
-    return {
-      orderFee: Number(memSettings.orderFee ?? 3),
-      minDeposit: Number(memSettings.minDeposit ?? 15),
-    };
+    return formatSettings(memSettings);
   },
 
-  async update({ orderFee, minDeposit }) {
+  async update({ orderFee, minDeposit, forceJoinEnabled, forceJoinChannel, forceJoinUrl }) {
     const patch = {};
     if (orderFee !== undefined && !isNaN(Number(orderFee)) && Number(orderFee) >= 0) {
       patch.orderFee = Math.round(Number(orderFee) * 100) / 100;
     }
     if (minDeposit !== undefined && !isNaN(Number(minDeposit)) && Number(minDeposit) >= 1) {
       patch.minDeposit = Math.round(Number(minDeposit));
+    }
+    if (forceJoinEnabled !== undefined) {
+      patch.forceJoinEnabled = Boolean(forceJoinEnabled);
+    }
+    if (forceJoinChannel !== undefined) {
+      patch.forceJoinChannel = String(forceJoinChannel).trim();
+    }
+    if (forceJoinUrl !== undefined) {
+      patch.forceJoinUrl = String(forceJoinUrl).trim();
     }
 
     if (mongoose.connection.readyState === 1) {
@@ -68,16 +96,10 @@ const SettingsRepo = {
         { $set: patch },
         { returnDocument: 'after', upsert: true }
       );
-      return {
-        orderFee: Number(updated.orderFee ?? 3),
-        minDeposit: Number(updated.minDeposit ?? 15),
-      };
+      return formatSettings(updated);
     }
     memSettings = { ...memSettings, ...patch };
-    return {
-      orderFee: Number(memSettings.orderFee ?? 3),
-      minDeposit: Number(memSettings.minDeposit ?? 15),
-    };
+    return formatSettings(memSettings);
   },
 };
 
