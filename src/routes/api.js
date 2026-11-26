@@ -16,6 +16,7 @@ const BharatPeService = require('../services/bharatpeService');
 
 const pendingRecharges = new Map();
 const notifiedOrderIds = new Set();
+const chargedOrderIds = new Set();
 
 const SMALL_CAPS_MAP = {
 	a: 'ᴀ', b: 'ʙ', c: 'ᴄ', d: 'ᴅ', e: 'ᴇ', f: 'ꜰ', g: 'ɢ', h: 'ʜ', i: 'ɪ',
@@ -1097,8 +1098,8 @@ router.get('/orders', async (req, res) => {
 							}
 						} catch (e) {}
 					}
-								// Combine newly placed orders in this user's session with live orders (deduped by order_id)
-								const userOrders = getUserPlacedOrders(tgUserId);
+								// Combine confirmed session orders with live orders (skip unpaid PAYMENT_PENDING orders)
+								const userOrders = getUserPlacedOrders(tgUserId).filter((o) => o.order_status !== 'PAYMENT_PENDING');
 								const seen = new Set(userOrders.map((o) => String(o.order_id)));
 								const allOrders = [...userOrders, ...liveOrdersList.filter((o) => !seen.has(String(o.order_id)))];
 								res.json({
@@ -1187,13 +1188,13 @@ router.get('/orders', async (req, res) => {
 								});
 							}
 
-							// Atomic Order Fee deduction from user's wallet (using live Admin Settings)
+							// Pre-check wallet balance (actual deduction happens ONLY after payment confirmation!)
 							const cfg = await SettingsRepo.get();
 							const currentFee = cfg.orderFee;
 							const currentMinDep = cfg.minDeposit;
 							if (currentFee > 0) {
-								const feeCheck = await WalletRepo.deductOrderFee(tgUserId, currentFee);
-								if (!feeCheck.success) {
+								const wallet = await WalletRepo.getWallet(tgUserId);
+								if (Number(wallet?.balance || 0) < currentFee) {
 									return res.status(402).json({
 										success: false,
 										code: 'INSUFFICIENT_WALLET_BALANCE',
@@ -1238,12 +1239,9 @@ router.get('/orders', async (req, res) => {
 							};
 							const updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId);
 							if (!updateRes.success || (updateRes.data && updateRes.data.statusCode && updateRes.data.statusCode !== 0)) {
-								if (currentFee > 0) {
-									await WalletRepo.refundOrderFee(tgUserId, currentFee, 'Order Failed Auto-Refund');
-								}
 								return res.status(400).json({
 									success: false,
-									error: updateRes.data?.statusMessage || updateRes.error?.statusMessage || (typeof updateRes.error === 'string' ? updateRes.error : 'Swiggy cart sync failed.') + (currentFee > 0 ? ` ₹${currentFee} fee refunded.` : ''),
+									error: updateRes.data?.statusMessage || updateRes.error?.statusMessage || (typeof updateRes.error === 'string' ? updateRes.error : 'Swiggy cart sync failed.'),
 									details: updateRes.data || updateRes.error,
 								});
 							}
@@ -1272,13 +1270,9 @@ router.get('/orders', async (req, res) => {
 							}, tid, token, userId);
 
 							if (!placeRes.success || !placeRes.orderId) {
-								// Auto-refund order fee immediately if Swiggy rejects order placement
-								if (currentFee > 0) {
-									await WalletRepo.refundOrderFee(tgUserId, currentFee, 'Order Failed Auto-Refund');
-								}
 								return res.status(400).json({
 									success: false,
-									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || `Swiggy rejected order placement.${currentFee > 0 ? ` ₹${currentFee} fee refunded.` : ''}`,
+									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || 'Swiggy rejected order placement.',
 									details: placeRes.data || placeRes.error,
 								});
 							}
@@ -1306,6 +1300,11 @@ router.get('/orders', async (req, res) => {
 
 							const pmCheck = String(upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent')).toUpperCase();
 							if (pmCheck === 'CASH' || pmCheck === 'COD') {
+								newOrder.order_status = 'CONFIRMED';
+								if (!chargedOrderIds.has(newOrder.order_id)) {
+									chargedOrderIds.add(newOrder.order_id);
+									await WalletRepo.deductOrderFee(tgUserId, currentFee, newOrder.order_id);
+								}
 								sendOrderPlacedTelegram(tgUserId, newOrder.order_id, active, newOrder, false);
 							}
 
@@ -1340,6 +1339,11 @@ router.get('/orders', async (req, res) => {
 							} = await getActiveCreds(tgUserId);
 							const result = await SwiggyService.confirmOrder(orderId, tid, token, userId);
 							if (result.success) {
+								if (!chargedOrderIds.has(String(orderId))) {
+									chargedOrderIds.add(String(orderId));
+									const cfg = await SettingsRepo.get();
+									await WalletRepo.deductOrderFee(tgUserId, cfg.orderFee, String(orderId));
+								}
 								const ord = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(orderId));
 								if (ord) ord.order_status = 'CONFIRMED';
 								sendOrderPlacedTelegram(tgUserId, orderId, active, ord || null, false);

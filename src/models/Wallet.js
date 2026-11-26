@@ -167,24 +167,34 @@ const WalletRepo = {
 
   async deductOrderFee(tgUserId, fee = 3, orderId = '') {
     const uid = normUid(tgUserId);
-    const amt = Number(fee || 3);
+    const amt = Math.max(0, Number(fee ?? 3));
 
     if (mongoose.connection.readyState === 1) {
+      if (orderId) {
+        const existing = await WalletTxnModel.findOne({ orderId: String(orderId), type: 'DEBIT' });
+        if (existing) {
+          const w = await this.getWallet(uid);
+          return { success: true, balance: w.balance, alreadyCharged: true };
+        }
+      }
+      const query = amt > 0 ? { telegramUserId: uid, balance: { $gte: amt } } : { telegramUserId: uid };
       const updated = await WalletModel.findOneAndUpdate(
-        { telegramUserId: uid, balance: { $gte: amt } },
+        query,
         { $inc: { balance: -amt, totalOrders: 1 } },
-        { new: true }
+        { new: true, upsert: amt === 0 }
       );
       if (!updated) {
         return { success: false, error: 'Insufficient wallet balance' };
       }
-      await WalletTxnModel.create({
-        telegramUserId: uid,
-        type: 'DEBIT',
-        amount: amt,
-        orderId: String(orderId || ''),
-        description: orderId ? `Order Fee (#${orderId})` : 'Order Fee',
-      });
+      if (amt > 0) {
+        await WalletTxnModel.create({
+          telegramUserId: uid,
+          type: 'DEBIT',
+          amount: amt,
+          orderId: String(orderId || ''),
+          description: orderId ? `Order Fee (#${orderId})` : 'Order Fee',
+        });
+      }
       return { success: true, balance: updated.balance };
     }
 
