@@ -2,6 +2,7 @@ const telegramModule = require('node-telegram-bot-api');
 const BotClass = telegramModule.Bot || telegramModule;
 const axios = require('axios');
 const { AccountRepo } = require('./models/Account');
+const { SettingsRepo, isAdminUser } = require('./models/Settings');
 
 let bot = null;
 
@@ -60,6 +61,42 @@ const initBot = (webAppUrl) => {
         const reply = `Usage: /seturl https://your-new-tunnel-url`;
         if (ctx.reply) await ctx.reply(reply);
       }
+    });
+
+    // Admin /admin command to open separate Admin Panel
+    bot.command('admin', async (ctx) => {
+      const uid = String(ctx.from?.id || '');
+      if (!isAdminUser(uid)) {
+        if (ctx.reply) await ctx.reply('❌ Admin access required.');
+        return;
+      }
+      const cur = await SettingsRepo.get();
+      const adminUrl = `${currentWebAppUrl.replace(/\/$/, '')}/admin.html`;
+      const msg = `⚙️ *Toing Pro Admin Panel*\n\n• Current Order Fee: *₹${cur.orderFee}*\n• Minimum Deposit: *₹${cur.minDeposit}*\n\nTap below to open Admin Settings, or use:\n\`/setfee ${cur.orderFee} ${cur.minDeposit}\``;
+      const opts = {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[{ text: '⚙️ Open Admin Panel', web_app: { url: adminUrl } }]],
+        },
+      };
+      if (ctx.reply) await ctx.reply(msg, opts);
+    });
+
+    // Admin /setfee <orderFee> <minDeposit> command
+    bot.command('setfee', async (ctx) => {
+      const uid = String(ctx.from?.id || '');
+      if (!isAdminUser(uid)) {
+        if (ctx.reply) await ctx.reply('❌ Admin access required.');
+        return;
+      }
+      const parts = (ctx.message?.text || '').trim().split(/\s+/);
+      if (parts.length < 3 || isNaN(Number(parts[1])) || isNaN(Number(parts[2]))) {
+        const cur = await SettingsRepo.get();
+        if (ctx.reply) await ctx.reply(`Current Settings:\n• Order Fee: ₹${cur.orderFee}\n• Min Deposit: ₹${cur.minDeposit}\n\nUsage: /setfee <orderFee> <minDeposit>\nExample: /setfee 3 15`);
+        return;
+      }
+      const updated = await SettingsRepo.update({ orderFee: Number(parts[1]), minDeposit: Number(parts[2]) });
+      if (ctx.reply) await ctx.reply(`✅ Settings Updated!\n• Order Fee: ₹${updated.orderFee} / order\n• Min Deposit: ₹${updated.minDeposit}`);
     });
 
     // Register /start command

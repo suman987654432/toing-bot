@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Toing Pro — Admin Panel</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; padding: 0; }
+    body { background: #f4f3ff; color: #111827; padding: 18px; display: flex; justify-content: center; }
+    .wrap { width: 100%; max-width: 440px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; padding: 18px; box-shadow: 0 6px 20px rgba(79,70,229,0.06); }
+    h2 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+    .sub { font-size: 12.5px; color: #6b7280; margin-bottom: 16px; }
+    label { display: block; font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 6px; }
+    input { width: 100%; padding: 11px 13px; border: 1.5px solid #e5e7eb; border-radius: 12px; font-size: 14px; font-weight: 700; background: #f9fafb; margin-bottom: 14px; outline: none; }
+    input:focus { border-color: #6366f1; }
+    button { width: 100%; padding: 13px; border: none; border-radius: 999px; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: 0.6; }
+    .msg { margin-top: 12px; font-size: 13px; font-weight: 700; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>⚙️ Toing Pro Admin Panel</h2>
+      <div class="sub">Update per-order fee & minimum wallet deposit</div>
+
+      <div id="adminLoading" class="sub">Verifying admin access...</div>
+      <div id="adminForm" style="display:none;">
+        <label>Order Fee per Order (₹)</label>
+        <input type="number" id="inOrderFee" min="0" step="0.5" placeholder="e.g. 3" />
+
+        <label>Minimum Wallet Deposit (₹)</label>
+        <input type="number" id="inMinDeposit" min="1" step="1" placeholder="e.g. 15" />
+
+        <button id="btnSave" onclick="saveSettings()">Save Settings</button>
+        <div id="statusMsg" class="msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg) { tg.ready(); tg.expand(); }
+    const tgUserId = String(tg?.initDataUnsafe?.user?.id || '');
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/admin/settings', {
+          headers: { 'x-tg-user-id': tgUserId }
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          document.getElementById('adminLoading').innerHTML = '<span style="color:#dc2626; font-weight:700;">❌ Unauthorized: Admin access required.</span>';
+          return;
+        }
+        document.getElementById('adminLoading').style.display = 'none';
+        document.getElementById('adminForm').style.display = 'block';
+        document.getElementById('inOrderFee').value = data.orderFee;
+        document.getElementById('inMinDeposit').value = data.minDeposit;
+      } catch (e) {
+        document.getElementById('adminLoading').textContent = 'Failed to load settings.';
+      }
+    }
+
+    async function saveSettings() {
+      const btn = document.getElementById('btnSave');
+      const msg = document.getElementById('statusMsg');
+      const orderFee = Number(document.getElementById('inOrderFee').value);
+      const minDeposit = Number(document.getElementById('inMinDeposit').value);
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      try {
+        const res = await fetch('/api/admin/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tg-user-id': tgUserId },
+          body: JSON.stringify({ orderFee, minDeposit })
+        });
+        const data = await res.json();
+        if (data.success) {
+          msg.style.color = '#16a34a';
+          msg.textContent = `✅ Saved! Order Fee: ₹${data.orderFee}, Min Deposit: ₹${data.minDeposit}`;
+        } else {
+          msg.style.color = '#dc2626';
+          msg.textContent = data.error || 'Failed to save';
+        }
+      } catch (e) {
+        msg.style.color = '#dc2626';
+        msg.textContent = 'Network error';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Settings';
+      }
+    }
+
+    loadSettings();
+  </script>
+</body>
+</html>

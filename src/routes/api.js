@@ -7,11 +7,13 @@ const {
 const {
 	WalletRepo
 } = require('../models/Wallet');
+const {
+	SettingsRepo,
+	isAdminUser
+} = require('../models/Settings');
 const SwiggyService = require('../services/swiggyService');
 const BharatPeService = require('../services/bharatpeService');
 
-const ORDER_FEE_INR = 3;
-const MIN_DEPOSIT_INR = 15;
 const pendingRecharges = new Map();
 // Real geocoding helper for manual/text addresses (OpenStreetMap Nominatim)
 const geocodeAddress = async (queries = []) => {
@@ -968,14 +970,19 @@ router.get('/orders', async (req, res) => {
 								});
 							}
 
-							// Atomic ₹3 Order Fee deduction from user's wallet
-							const feeCheck = await WalletRepo.deductOrderFee(tgUserId, ORDER_FEE_INR);
-							if (!feeCheck.success) {
-								return res.status(402).json({
-									success: false,
-									code: 'INSUFFICIENT_WALLET_BALANCE',
-									error: `₹${ORDER_FEE_INR} order fee required! Minimum ₹${MIN_DEPOSIT_INR} deposit needed in your wallet.`,
-								});
+							// Atomic Order Fee deduction from user's wallet (using live Admin Settings)
+							const cfg = await SettingsRepo.get();
+							const currentFee = cfg.orderFee;
+							const currentMinDep = cfg.minDeposit;
+							if (currentFee > 0) {
+								const feeCheck = await WalletRepo.deductOrderFee(tgUserId, currentFee);
+								if (!feeCheck.success) {
+									return res.status(402).json({
+										success: false,
+										code: 'INSUFFICIENT_WALLET_BALANCE',
+										error: `₹${currentFee} order fee required! Minimum ₹${currentMinDep} deposit needed in your wallet.`,
+									});
+								}
 							}
 
 							const lat = selected.lat || 25.6074;
@@ -1019,11 +1026,13 @@ router.get('/orders', async (req, res) => {
 							}, tid, token, userId);
 
 							if (!placeRes.success || !placeRes.orderId) {
-								// Auto-refund ₹3 order fee immediately if Swiggy rejects order placement
-								await WalletRepo.refundOrderFee(tgUserId, ORDER_FEE_INR, 'Order Failed Auto-Refund');
+								// Auto-refund order fee immediately if Swiggy rejects order placement
+								if (currentFee > 0) {
+									await WalletRepo.refundOrderFee(tgUserId, currentFee, 'Order Failed Auto-Refund');
+								}
 								return res.status(400).json({
 									success: false,
-									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || 'Swiggy rejected order placement. ₹3 fee refunded.',
+									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || `Swiggy rejected order placement.${currentFee > 0 ? ` ₹${currentFee} fee refunded.` : ''}`,
 									details: placeRes.data || placeRes.error,
 								});
 							}
@@ -1257,15 +1266,46 @@ router.get('/orders', async (req, res) => {
 router.get('/wallet', async (req, res) => {
 	try {
 		const tgUserId = getTgUserId(req);
-		const wallet = await WalletRepo.getWallet(tgUserId);
-		const transactions = await WalletRepo.getTransactions(tgUserId, 20);
+		const [wallet, transactions, cfg] = await Promise.all([
+			WalletRepo.getWallet(tgUserId),
+			WalletRepo.getTransactions(tgUserId, 20),
+			SettingsRepo.get(),
+		]);
 		res.json({
 			success: true,
 			balance: wallet.balance || 0,
-			minDeposit: MIN_DEPOSIT_INR,
-			orderFee: ORDER_FEE_INR,
+			minDeposit: cfg.minDeposit,
+			orderFee: cfg.orderFee,
+			isAdmin: isAdminUser(tgUserId),
 			transactions,
 		});
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
+router.get('/admin/settings', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		if (!isAdminUser(tgUserId)) {
+			return res.status(403).json({ success: false, error: 'Admin access required' });
+		}
+		const cfg = await SettingsRepo.get();
+		res.json({ success: true, ...cfg });
+	} catch (err) {
+		res.status(500).json({ success: false, error: err.message });
+	}
+});
+
+router.post('/admin/settings', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		if (!isAdminUser(tgUserId)) {
+			return res.status(403).json({ success: false, error: 'Admin access required' });
+		}
+		const { orderFee, minDeposit } = req.body;
+		const updated = await SettingsRepo.update({ orderFee, minDeposit });
+		res.json({ success: true, message: 'Settings updated!', ...updated });
 	} catch (err) {
 		res.status(500).json({ success: false, error: err.message });
 	}
@@ -1274,11 +1314,13 @@ router.get('/wallet', async (req, res) => {
 router.post('/wallet/recharge/init', async (req, res) => {
 	try {
 		const tgUserId = getTgUserId(req);
+		const cfg = await SettingsRepo.get();
+		const minDeposit = cfg.minDeposit;
 		const amount = Math.round(Number(req.body.amount || 0));
-		if (!amount || amount < MIN_DEPOSIT_INR) {
+		if (!amount || amount < minDeposit) {
 			return res.status(400).json({
 				success: false,
-				error: `Minimum deposit is ₹${MIN_DEPOSIT_INR}`,
+				error: `Minimum deposit is ₹${minDeposit}`,
 			});
 		}
 		const refId = 'TOING' + Date.now().toString().slice(-8);
@@ -1300,7 +1342,7 @@ router.post('/wallet/recharge/init', async (req, res) => {
 			amount,
 			upiUri,
 			qrUrl,
-			minDeposit: MIN_DEPOSIT_INR,
+			minDeposit,
 		});
 	} catch (err) {
 		res.status(500).json({ success: false, error: err.message });
@@ -1340,11 +1382,12 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 					message: 'UTR not found yet in BharatPe transactions. Please wait a few seconds and retry.',
 				});
 			}
-			if (Number(matched.amount) < MIN_DEPOSIT_INR) {
+			if (Number(matched.amount) < (await SettingsRepo.get()).minDeposit) {
+				const minDep = (await SettingsRepo.get()).minDeposit;
 				return res.status(400).json({
 					success: false,
 					verified: false,
-					error: `Minimum deposit is ₹${MIN_DEPOSIT_INR}. This transaction is only ₹${matched.amount}.`,
+					error: `Minimum deposit is ₹${minDep}. This transaction is only ₹${matched.amount}.`,
 				});
 			}
 		} else if (session && session.tgUserId === tgUserId) {

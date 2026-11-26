@@ -1766,9 +1766,11 @@ async function handlePlaceOrder() {
     return;
   }
 
-  // Enforce ₹3 order fee in wallet (min ₹15 deposit)
-  if ((state.walletBalance || 0) < 3) {
-    showToast('₹3 order fee required! Please deposit min ₹15 in wallet.', true);
+  // Enforce dynamic order fee in wallet
+  const reqFee = Number(state.orderFee ?? 3);
+  const reqMin = Number(state.minDeposit ?? 15);
+  if (reqFee > 0 && (state.walletBalance || 0) < reqFee) {
+    showToast(`₹${reqFee} order fee required! Please deposit min ₹${reqMin} in wallet.`, true);
     openWalletModal();
     return;
   }
@@ -1863,6 +1865,9 @@ async function loadWallet() {
     const data = await res.json();
     if (data.success) {
       state.walletBalance = Number(data.balance || 0);
+      state.orderFee = Number(data.orderFee ?? 3);
+      state.minDeposit = Number(data.minDeposit ?? 15);
+      state.isAdmin = Boolean(data.isAdmin);
       state.walletTxns = data.transactions || [];
       updateWalletUi();
       renderWalletTransactions();
@@ -1872,16 +1877,91 @@ async function loadWallet() {
 
 function updateWalletUi() {
   const bal = Number(state.walletBalance || 0);
+  const fee = Number(state.orderFee ?? 3);
+  const minDep = Number(state.minDeposit ?? 15);
+
   const pillText = document.getElementById('walletBalanceText');
   if (pillText) pillText.textContent = `₹${bal}`;
   const modalBal = document.getElementById('modalWalletBal');
   if (modalBal) modalBal.textContent = `₹${bal}`;
 
+  const feeLbl = document.getElementById('walletOrderFeeLabel');
+  if (feeLbl) feeLbl.textContent = `₹${fee} / order`;
+  const minLbl = document.getElementById('walletMinDepLabel');
+  if (minLbl) minLbl.textContent = `₹${minDep}`;
+  const minPrompt = document.getElementById('walletMinDepPrompt');
+  if (minPrompt) minPrompt.textContent = `Select Recharge Amount (Min ₹${minDep})`;
+
+  const amtInput = document.getElementById('inputRechargeAmount');
+  if (amtInput) {
+    amtInput.min = String(minDep);
+    if (!amtInput.value || Number(amtInput.value) < minDep) amtInput.value = minDep;
+  }
+
+  const chipsWrap = document.getElementById('walletQuickChips');
+  if (chipsWrap) {
+    const presets = [minDep, minDep * 2, minDep * 4, minDep * 10];
+    chipsWrap.innerHTML = presets.map((v, idx) => {
+      const ordersTxt = fee > 0 ? ` (${Math.floor(v / fee)} Orders)` : '';
+      return `<button type="button" class="acc-chip ${idx === 0 ? 'active' : ''}" onclick="setRechargeAmount(${v})">₹${v}${idx < 3 ? ordersTxt : ''}</button>`;
+    }).join('');
+  }
+
+  const adminBox = document.getElementById('adminFeeSettingsBox');
+  if (adminBox) {
+    if (state.isAdmin) {
+      adminBox.classList.remove('hidden');
+      const fIn = document.getElementById('adminInputOrderFee');
+      const mIn = document.getElementById('adminInputMinDeposit');
+      if (fIn && document.activeElement !== fIn) fIn.value = fee;
+      if (mIn && document.activeElement !== mIn) mIn.value = minDep;
+    } else {
+      adminBox.classList.add('hidden');
+    }
+  }
+
   const stickyBtn = document.getElementById('btnStickyPayOrder');
   if (stickyBtn && !stickyBtn.disabled) {
-    stickyBtn.innerHTML = bal < 3
+    stickyBtn.innerHTML = (fee > 0 && bal < fee)
       ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg><span id="stickyPayBtnText">Add order fee</span>`
-      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="stickyPayBtnText">Place Order (₹3 Fee)</span>`;
+      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg><span id="stickyPayBtnText">Place Order${fee > 0 ? ` (₹${fee} Fee)` : ''}</span>`;
+  }
+}
+
+async function saveAdminFeeSettings() {
+  const orderFee = Number(document.getElementById('adminInputOrderFee')?.value);
+  const minDeposit = Number(document.getElementById('adminInputMinDeposit')?.value);
+  if (isNaN(orderFee) || orderFee < 0 || isNaN(minDeposit) || minDeposit < 1) {
+    showToast('Enter valid Order Fee (>= 0) and Min Deposit (>= 1)', true);
+    return;
+  }
+  const btn = document.getElementById('btnSaveAdminSettings');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+  }
+  try {
+    const res = await fetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderFee, minDeposit }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      state.orderFee = Number(data.orderFee);
+      state.minDeposit = Number(data.minDeposit);
+      updateWalletUi();
+      showToast(`✅ Updated: ₹${data.orderFee}/order, Min ₹${data.minDeposit}`);
+    } else {
+      showToast(data.error || 'Failed to save settings', true);
+    }
+  } catch (e) {
+    showToast('Network error saving settings', true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Save Settings';
+    }
   }
 }
 
@@ -1932,9 +2012,10 @@ function setRechargeAmount(amt) {
 }
 
 async function initBharatPeRecharge() {
+  const minDep = Number(state.minDeposit ?? 15);
   const amt = Math.round(Number(document.getElementById('inputRechargeAmount')?.value || 0));
-  if (!amt || amt < 15) {
-    showToast('Minimum deposit is ₹15', true);
+  if (!amt || amt < minDep) {
+    showToast(`Minimum deposit is ₹${minDep}`, true);
     return;
   }
   const btn = document.getElementById('btnInitBharatPe');
