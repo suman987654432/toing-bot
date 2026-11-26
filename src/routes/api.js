@@ -125,14 +125,32 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 }
 // Real geocoding helper for manual/text addresses (OpenStreetMap Nominatim)
 const geocodeAddress = async (queries = []) => {
+	const expanded = [];
 	for (const q of queries) {
 		if (!q || !q.trim()) continue;
+		expanded.push(q.trim());
+		// Also try locality tail (e.g. "Riddhi gym kela mandi bazar samiti, Patna, India" -> "bazar samiti, Patna, India")
+		const parts = q.split(',').map((p) => p.trim()).filter(Boolean);
+		if (parts.length >= 2) {
+			const words = parts[0].split(/\s+/).filter((w) => w.length > 2 && !/^(floor|flat|room|house|no|near|opp|sector|block)$/i.test(w));
+			if (words.length >= 2) {
+				expanded.push(`${words.slice(-2).join(' ')}, ${parts.slice(1).join(', ')}`);
+			}
+			if (words.length >= 3) {
+				expanded.push(`${words.slice(-3).join(' ')}, ${parts.slice(1).join(', ')}`);
+			}
+		}
+	}
+	const seen = new Set();
+	for (const q of expanded) {
+		if (seen.has(q)) continue;
+		seen.add(q);
 		try {
 			const resp = await axios.get('https://nominatim.openstreetmap.org/search', {
 				params: {
 					format: 'json',
 					limit: 1,
-					q: q.trim()
+					q
 				},
 				headers: {
 					'User-Agent': 'ToingProApp/1.0'
@@ -464,7 +482,8 @@ router.get('/addresses', async (req, res) => {
 		// Fetch live addresses from maps.swiggy.com only on explicit refresh or when cache is empty
 		if ((forceRefresh || addresses.length === 0) && (active.tid || active.token)) {
 			try {
-				const swiggyRes = await SwiggyService.getAddresses(active.tid, active.token, active.userId);
+				const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
+				const swiggyRes = await SwiggyService.getAddresses(active.tid, active.token, resolvedUid);
 				if (swiggyRes.success && Array.isArray(swiggyRes.addresses) && swiggyRes.addresses.length > 0) {
 					addresses = swiggyRes.addresses.map((a, i) => {
 						const act = a.actual_address || {};
@@ -475,8 +494,8 @@ router.get('/addresses', async (req, res) => {
 							address_line1: a.display_address || act.formatted_address || act.address_line || 'Delivery Address',
 							address_line2: act.locality ? `${act.locality}, ${act.city || ''}` : (act.city || ''),
 							city: act.city || a.city || 'Patna',
-							lat: parseFloat(act.location?.latitude || a.lat) || 25.2730006,
-							lng: parseFloat(act.location?.longitude || a.lng) || 82.9639115,
+							lat: parseFloat(act.location?.lat ?? act.location?.latitude ?? a.lat) || 25.6074,
+							lng: parseFloat(act.location?.lng ?? act.location?.longitude ?? a.lng) || 85.1587,
 							tag: (Array.isArray(act.tags) && act.tags[0]) || a.tag || 'HOME',
 							isAccountAddress: true,
 						};
@@ -762,7 +781,7 @@ router.post('/addresses/add-manual', async (req, res) => {
 // Update Address
 router.put('/addresses/:id', async (req, res) => {
 	try {
-		const { name, phone, addressLine1, addressLine2, city, tag } = req.body;
+		const { name, phone, addressLine1, addressLine2, city, tag, lat, lng } = req.body;
 		const active = await AccountRepo.getActive(getTgUserId(req));
 		if (!active) {
 			return res.status(400).json({ success: false, error: 'No active account' });
@@ -784,18 +803,25 @@ router.put('/addresses/:id', async (req, res) => {
 			tag: tag || base.tag || 'HOME',
 		};
 
-		const geo = await geocodeAddress([
-			[updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
-			[updatedFields.address_line1, updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
-			[updatedFields.address_line1, targetCity, 'India'].filter(Boolean).join(', '),
-			`${targetCity}, India`,
-		]);
-		if (geo) {
-			updatedFields.lat = geo.lat;
-			updatedFields.lng = geo.lng;
+		const reqLat = parseFloat(lat);
+		const reqLng = parseFloat(lng);
+		if (reqLat && reqLng) {
+			updatedFields.lat = reqLat;
+			updatedFields.lng = reqLng;
 		} else {
-			updatedFields.lat = base.lat || 25.6074;
-			updatedFields.lng = base.lng || 85.1587;
+			const geo = await geocodeAddress([
+				[updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
+				[updatedFields.address_line1, updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
+				[updatedFields.address_line1, targetCity, 'India'].filter(Boolean).join(', '),
+				`${targetCity}, India`,
+			]);
+			if (geo) {
+				updatedFields.lat = geo.lat;
+				updatedFields.lng = geo.lng;
+			} else {
+				updatedFields.lat = base.lat || 25.6074;
+				updatedFields.lng = base.lng || 85.1587;
+			}
 		}
 
 		// Sync edited address to Swiggy so it gets a real Swiggy address_id (for cart delivery & order placement)
