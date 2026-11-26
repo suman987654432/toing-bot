@@ -265,9 +265,7 @@ const SwiggyService = {
 				responseType: 'arraybuffer',
 				timeout: 10000,
 			});
-			const str = Buffer.isBuffer(response.data)
-				? response.data.toString('latin1')
-				: (typeof response.data === 'string' ? response.data : JSON.stringify(response.data));
+			const str = Buffer.isBuffer(response.data) ? response.data.toString('latin1') : (typeof response.data === 'string' ? response.data : JSON.stringify(response.data));
 			const restMarker = 'swiggy.presentation.food.v2.Restaurant';
 			const list = [];
 			let pos = 0;
@@ -294,18 +292,13 @@ const SwiggyService = {
 				const bOnly = chunk.match(/B[\x02-\x28]([A-Za-z0-9\s\-,\.']{2,35})/);
 				const jOnly = chunk.match(/J[\x02-\x28]([A-Za-z0-9\s\-,\.']{2,35})/);
 				const area = bjMatch ? (bjMatch[1].trim() || bjMatch[2].trim()) : (bOnly ? bOnly[1].trim() : (jOnly ? jOnly[1].trim() : (city || 'Nearby')));
-
 				// 4. Real Rating
 				const ratingMatch = chunk.match(/([1-5]\.[0-9])\s+(?:cid=|SERVICEABLE|[0-9]\s+')/);
 				const avgRating = ratingMatch ? ratingMatch[1] : (chunk.match(/\b([3-4]\.[0-9])\b/)?.[1] || '4.2');
-
 				// 5. Real Delivery Time (SLA) & Open/Closed Status
 				const slaMatch = chunk.match(/([0-9]{1,2}-[0-9]{1,2}\s+MINS|[0-9]{1,2}\s+MINS)/i);
 				const isServiceableP1 = chunk.includes('SERVICEABLEP\x01');
-				const isClosedExplicit = chunk.includes('SERVICEABLEP\x00') ||
-					chunk.includes('UNSERVICEABLE') ||
-					chunk.includes('Closed now') ||
-					chunk.includes('CLOSED');
+				const isClosedExplicit = chunk.includes('SERVICEABLEP\x00') || chunk.includes('UNSERVICEABLE') || chunk.includes('Closed now') || chunk.includes('CLOSED');
 				const isOpen = Boolean(slaMatch && isServiceableP1 && !isClosedExplicit);
 				const deliveryTime = isOpen ? (slaMatch ? slaMatch[1].toLowerCase() : '25-30 mins') : '';
 				// 6. Real Distance
@@ -365,7 +358,8 @@ const SwiggyService = {
 		while (p < dishBuf.length - 4) {
 			if (dishBuf[p] === 0x52) {
 				p++;
-				let len = 0, shift = 0;
+				let len = 0,
+					shift = 0;
 				while (p < dishBuf.length) {
 					const b = dishBuf[p++];
 					len |= (b & 0x7f) << shift;
@@ -377,14 +371,16 @@ const SwiggyService = {
 					const groupBuf = dishBuf.slice(p, groupEnd);
 					let gp = 0;
 					if (groupBuf[0] === 0x12) gp = 2;
-					let groupId = '', groupName = '';
+					let groupId = '',
+						groupName = '';
 					const choices = [];
 					while (gp < groupBuf.length) {
 						const tag = groupBuf[gp++];
 						const fieldNum = tag >> 3;
 						const wire = tag & 0x07;
 						if (wire === 2) {
-							let sLen = 0, sShift = 0;
+							let sLen = 0,
+								sShift = 0;
 							while (gp < groupBuf.length) {
 								const b = groupBuf[gp++];
 								sLen |= (b & 0x7f) << sShift;
@@ -397,12 +393,17 @@ const SwiggyService = {
 								groupName = groupBuf.slice(gp, gp + sLen).toString('utf8');
 							} else if (fieldNum === 3) {
 								const choiceBuf = groupBuf.slice(gp, gp + sLen);
-								let cp = 0, choiceName = '', choiceId = '', choicePrice = 0;
+								let cp = 0,
+									choiceName = '',
+									choiceId = '',
+									choicePrice = 0;
 								while (cp < choiceBuf.length) {
 									const cTag = choiceBuf[cp++];
-									const cField = cTag >> 3, cWire = cTag & 0x07;
+									const cField = cTag >> 3,
+										cWire = cTag & 0x07;
 									if (cWire === 2) {
-										let cLen = 0, cShift = 0;
+										let cLen = 0,
+											cShift = 0;
 										while (cp < choiceBuf.length) {
 											const b = choiceBuf[cp++];
 											cLen |= (b & 0x7f) << cShift;
@@ -470,27 +471,21 @@ const SwiggyService = {
 				responseType: 'arraybuffer',
 				timeout: 10000,
 			});
-			const str = Buffer.isBuffer(response.data)
-				? response.data.toString('latin1')
-				: (typeof response.data === 'string' ? response.data : JSON.stringify(response.data));
+			const str = Buffer.isBuffer(response.data) ? response.data.toString('latin1') : (typeof response.data === 'string' ? response.data : JSON.stringify(response.data));
 			const dishes = [];
-
 			// 1. Primary High-Fidelity Parser using Swiggy Dish Protobuf Marker
 			const dishMarker = 'swiggy.presentation.food.v2.Dish';
 			let pos = 0;
 			while ((pos = str.indexOf(dishMarker, pos)) !== -1) {
 				const chunk = str.slice(pos, pos + 1200);
 				const words = chunk.replace(/[\x00-\x1F\x7F-\xFF]+/g, '|').split('|').map((w) => w.trim()).filter((w) => w.length >= 2);
-				
 				const id = (words[1] && /^[0-9]{6,10}$/.test(words[1])) ? words[1] : (chunk.match(/([0-9]{7,10})/)?.[1] || '');
 				const name = (words[2] && !words[2].includes('.jpg') && !words[2].includes('http')) ? words[2] : '';
-				
 				let rawCat = words[3] || 'Recommended Dishes';
 				if (rawCat.includes('*') || rawCat.length > 30 || rawCat.includes('http') || rawCat.includes('.jpg')) {
 					rawCat = 'Recommended Dishes';
 				}
 				const category = rawCat;
-
 				// Real Dish Image
 				let imageId = '';
 				const imgPath = chunk.match(/((?:FOOD_CATALOG|RX_THUMBNAIL)\/IMAGES\/(?:CMS|VENDOR)\/[A-Za-z0-9_\-\/\.]+(?:\.[a-z]{3,4}|_compressed)?)/i);
@@ -507,12 +502,10 @@ const SwiggyService = {
 				if (imageId && imageId.includes('.')) {
 					imageId = imageId.replace(/(\.(?:jpe?g|png|webp|avif)).*$/i, '$1');
 				}
-
 				// Real Prices from Swiggy Protobuf & Tag Offsets
 				const chunkBuf = Buffer.from(chunk, 'latin1');
 				let originalPrice = 0;
 				let price = 0;
-
 				// 1. Tag 0x15 (float32 price in paise)
 				for (let i = 0; i < chunkBuf.length - 4; i++) {
 					if (chunkBuf[i] === 0x15 && !price) {
@@ -520,20 +513,17 @@ const SwiggyService = {
 						if (val >= 20 && val <= 3500) price = val;
 					}
 				}
-
 				// 2. Swiggy final/listing price string match
 				const mFinal = chunk.match(/swiggy_final_price[^\d]+([0-9]{4,6})/);
 				if (mFinal) {
 					const p = Math.round(parseInt(mFinal[1], 10) / 100);
 					if (p >= 20 && p <= 3500) price = p;
 				}
-
 				const mList = chunk.match(/swiggy_listing_price[^\d]+([0-9]{4,6})/);
 				if (mList) {
 					const op = Math.round(parseInt(mList[1], 10) / 100);
 					if (op >= (price || 20)) originalPrice = op;
 				}
-
 				// 3. Fallback float tag offsets 0x45 / 0x4D if still not found
 				if (!price) {
 					for (let i = 0; i < chunkBuf.length - 4; i++) {
@@ -547,28 +537,17 @@ const SwiggyService = {
 						}
 					}
 				}
-
 				if (!price) price = originalPrice || 0;
 				// Only keep originalPrice when the API genuinely reports a higher listing price than final price
 				if (!originalPrice || originalPrice <= price) originalPrice = price;
-
 				// Description / Allergens info
 				const descMatch = chunk.match(/(?:\||\b)(Allergens:[^\|]+)/i) || chunk.match(/([A-Za-z0-9\s,\.\-]{25,120})(?=\x00|\|)/);
 				const description = descMatch ? descMatch[1].trim() : '';
-
 				// Veg / Non-veg
 				const lowerName = name.toLowerCase();
-				const isVeg = !chunk.includes('NONVEG') && 
-					!lowerName.includes('chicken') && 
-					!lowerName.includes('mutton') && 
-					!lowerName.includes('fish') && 
-					!lowerName.includes('egg') &&
-					!lowerName.includes('wings') &&
-					!lowerName.includes('peri peri strips');
-
+				const isVeg = !chunk.includes('NONVEG') && !lowerName.includes('chicken') && !lowerName.includes('mutton') && !lowerName.includes('fish') && !lowerName.includes('egg') && !lowerName.includes('wings') && !lowerName.includes('peri peri strips');
 				// Dynamic Customisation / Addon Groups (Parsed directly from Swiggy Protobuf stream)
 				const addonGroups = this.parseAddonGroups(chunkBuf);
-
 				if (id && name && !dishes.some((d) => d.id === id)) {
 					const finalPrice = price || 99;
 					const finalOrigPrice = (originalPrice && originalPrice > finalPrice) ? originalPrice : finalPrice;
@@ -587,7 +566,6 @@ const SwiggyService = {
 				}
 				pos += dishMarker.length;
 			}
-
 			// Fallback: If dishMarker found nothing, run secondary tag loop
 			if (dishes.length === 0) {
 				const buf = Buffer.from(str, 'latin1');
@@ -651,7 +629,6 @@ const SwiggyService = {
 					}
 				}
 			}
-
 			return {
 				success: true,
 				items: dishes,
@@ -902,21 +879,109 @@ const SwiggyService = {
 			};
 		}
 	},
+	// Parse protobuf OrderDetails widgets from disc.swiggy.com/api/v1/account/orders
+	parseOrdersProtobuf(buf) {
+		const orders = [];
+		const str = Buffer.isBuffer(buf) ? buf.toString('latin1') : String(buf || '');
+		const marker = 'swiggy.gandalf.widgets.v2.OrderDetails';
+		let pos = 0;
+		const readLenStr = (chunk, idx) => {
+			if (idx < 0 || idx >= chunk.length) return '';
+			const len = chunk.charCodeAt(idx);
+			if (len > 0 && len < 140 && idx + 1 + len <= chunk.length) {
+				return Buffer.from(chunk.slice(idx + 1, idx + 1 + len), 'latin1').toString('utf8').trim();
+			}
+			return '';
+		};
+		while ((pos = str.indexOf(marker, pos)) !== -1) {
+			const nextPos = str.indexOf(marker, pos + marker.length);
+			const chunk = str.slice(pos + marker.length, nextPos !== -1 ? nextPos : pos + marker.length + 2500);
+			// Clean ASCII words for fallback
+			const words = chunk.replace(/[\x00-\x1F\x7F-\xFF]+/g, '|').split('|').map((w) => w.trim()).filter((w) => w.length >= 1);
+			const orderId = chunk.match(/\b([0-9]{12,18})\b/)?.[1] || '';
+			// Extract restaurant name (usually after order_id and restaurant_id)
+			let restaurantName = '';
+			const idIdx = words.findIndex((w) => w === orderId);
+			if (idIdx !== -1) {
+				for (let i = idIdx + 1; i < Math.min(idIdx + 5, words.length); i++) {
+					if (!/^[0-9]+$/.test(words[i]) && words[i].length >= 2) {
+						restaurantName = words[i].replace(/["*]+$/, '').trim();
+						break;
+					}
+				}
+			}
+			// Protobuf field tags inside OrderDetails:
+			// 0x2a = total ("₹52"), 0x32 = status ("Delivered"), 0x62 = items summary, 0x6a = order time
+			let orderTotal = '';
+			let orderStatus = '';
+			let itemsSummary = '';
+			let orderTime = '';
+			for (let i = 0; i < chunk.length - 3; i++) {
+				const b = chunk.charCodeAt(i);
+				if (b === 0x2a && !orderTotal) {
+					const v = readLenStr(chunk, i + 1);
+					const tm = v.match(/₹\s*([0-9]+(?:\.[0-9]+)?)/);
+					if (tm) orderTotal = tm[1];
+				} else if (b === 0x32 && !orderStatus) {
+					const v = readLenStr(chunk, i + 1);
+					if (/^[A-Za-z\s]{3,25}$/.test(v)) orderStatus = v;
+				} else if (b === 0x62 && !itemsSummary) {
+					const v = readLenStr(chunk, i + 1);
+					if (v.length >= 3 && /[A-Za-z]/.test(v) && v !== 'delivery') itemsSummary = v;
+				} else if (b === 0x6a && !orderTime) {
+					const v = readLenStr(chunk, i + 1);
+					if (/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[0-9]{1,2})/i.test(v) && /\d{1,2}:\d{2}\s*(?:AM|PM)/i.test(v)) {
+						orderTime = v;
+					}
+				}
+			}
+			// Parse items from summary like "Rasedar subji (2),Egg bhujiya (1)"
+			const items = itemsSummary ? itemsSummary.split(',').map((part) => {
+				const m = part.trim().match(/^(.+?)\s*\((\d+)\)$/);
+				return m ? {
+					name: m[1].trim(),
+					quantity: parseInt(m[2], 10) || 1,
+					cost: 0
+				} : {
+					name: part.trim(),
+					quantity: 1,
+					cost: 0
+				};
+			}).filter((it) => it.name) : [];
+			if (orderId && !orders.some((o) => o.order_id === orderId)) {
+				orders.push({
+					order_id: orderId,
+					restaurant_name: restaurantName || 'Swiggy Toing Restaurant',
+					order_total: orderTotal || '0',
+					order_status: (orderStatus || 'DELIVERED').toUpperCase(),
+					delivery_address: '',
+					order_time: orderTime || 'Past Order',
+					items,
+				});
+			}
+			pos += marker.length;
+		}
+		return orders;
+	},
 	// Get Orders List
 	async getOrders(orderCount = 10, tid = '', token = '') {
 		const url = `https://disc.swiggy.com/api/v1/account/orders?order_count=${orderCount}`;
 		try {
 			const response = await axios.get(url, {
 				headers: buildDiscHeaders(tid, token),
+				responseType: 'arraybuffer',
 				timeout: 12000,
 			});
+			const orders = this.parseOrdersProtobuf(response.data);
 			return {
 				success: true,
-				data: response.data
+				orders,
+				data: response.data,
 			};
 		} catch (error) {
 			return {
 				success: false,
+				orders: [],
 				error: error.response?.data || error.message
 			};
 		}
@@ -986,5 +1051,4 @@ const SwiggyService = {
 		}
 	},
 };
-
 module.exports = SwiggyService;

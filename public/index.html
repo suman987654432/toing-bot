@@ -70,6 +70,12 @@ svg {
   contain-intrinsic-size: 96px;
 }
 
+input, textarea {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  pointer-events: auto !important;
+}
+
 /* Clean Shimmer Skeleton Loaders */
 @keyframes skeletonShimmer {
   0% { background-position: 200% 0; }
@@ -3281,12 +3287,12 @@ button svg {
             <label class="form-label">Mobile Number</label>
             <div class="phone-input-group">
               <div class="country-badge">IN +91</div>
-              <input type="tel" id="inputPhone" maxlength="10" placeholder="Enter Mobile Number" inputmode="numeric" />
+              <input type="tel" id="inputPhone" maxlength="10" placeholder="Enter Mobile Number" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" />
             </div>
 
             <div id="otpInputGroup" class="otp-group hidden">
               <label class="form-label">Enter 6-digit OTP</label>
-              <input type="text" id="inputOtp" maxlength="6" placeholder="Enter 6-Digit OTP" inputmode="numeric" />
+              <input type="text" id="inputOtp" maxlength="6" placeholder="Enter 6-Digit OTP" inputmode="numeric" autocomplete="one-time-code" autocorrect="off" spellcheck="false" />
             </div>
 
             <button class="btn-primary" id="btnSendOtp" onclick="handleOtpAction()">
@@ -3329,7 +3335,7 @@ button svg {
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <input type="text" id="searchAccountInput" placeholder="Search Account..." oninput="filterAccounts()" />
+            <input type="text" id="searchAccountInput" placeholder="Search Account..." autocomplete="off" spellcheck="false" oninput="filterAccounts()" />
           </div>
 
           <!-- Filter Chips & Clear Action (1:1 with Screenshot 3) -->
