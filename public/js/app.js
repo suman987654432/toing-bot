@@ -711,10 +711,6 @@ async function deleteAddress(addressId) {
 function openAddLinkModal() {
   document.getElementById('modalAddLink').classList.remove('hidden');
 }
-let manualMapInstance = null;
-let manualMapMarker = null;
-let mapSearchTimer = null;
-
 function selectManualTag(tag) {
   const clean = ['HOME', 'WORK', 'OTHER'].includes(String(tag).toUpperCase()) ? String(tag).toUpperCase() : 'OTHER';
   const hidden = document.getElementById('manualTag');
@@ -725,192 +721,21 @@ function selectManualTag(tag) {
   });
 }
 
-async function reverseGeocodeMapPin(lat, lng, autoFill = true) {
-  state.manualMapLat = Number(lat);
-  state.manualMapLng = Number(lng);
-  const titleEl = document.getElementById('mapPinTitle');
-  const fullEl = document.getElementById('mapPinFullAddress');
-  if (titleEl) titleEl.textContent = 'Locating pin...';
-  try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-    const data = await res.json();
-    const a = data.address || {};
-    const areaTitle = a.suburb || a.neighbourhood || a.road || a.city_district || a.city || 'Pinned Location';
-    const cityVal = a.city || a.town || a.state_district || a.state || '';
-    if (titleEl) titleEl.textContent = areaTitle;
-    if (fullEl) fullEl.textContent = data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    if (autoFill) {
-      const line2El = document.getElementById('manualLine2');
-      const cityEl = document.getElementById('manualCity');
-      if (line2El && !line2El.value.trim()) {
-        line2El.value = [a.road, a.suburb || a.neighbourhood].filter(Boolean).join(', ') || areaTitle;
-      }
-      if (cityEl && cityVal) cityEl.value = cityVal;
-    }
-  } catch (e) {
-    if (titleEl) titleEl.textContent = 'Pinned Location';
-    if (fullEl) fullEl.textContent = `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
-  }
-}
-
-function initManualAddressMap(lat, lng) {
-  const initLat = Number(lat) || Number(state.selectedAddress?.lat) || 25.6056176;
-  const initLng = Number(lng) || Number(state.selectedAddress?.lng) || 85.1706416;
-  state.manualMapLat = initLat;
-  state.manualMapLng = initLng;
-
-  if (typeof L === 'undefined') return;
-  const container = document.getElementById('manualMapContainer');
-  if (!container) return;
-
-  setTimeout(() => {
-    if (!manualMapInstance) {
-      manualMapInstance = L.map('manualMapContainer', { zoomControl: true }).setView([initLat, initLng], 16);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 19,
-      }).addTo(manualMapInstance);
-
-      const orangeIcon = L.divIcon({
-        className: 'custom-map-pin',
-        html: '<div style="width:28px;height:28px;background:#f97316;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 4px 10px rgba(0,0,0,0.3);"></div>',
-        iconSize: [28, 28],
-        iconAnchor: [14, 28],
-      });
-
-      manualMapMarker = L.marker([initLat, initLng], { draggable: true, icon: orangeIcon }).addTo(manualMapInstance);
-      manualMapMarker.on('dragend', () => {
-        const pos = manualMapMarker.getLatLng();
-        reverseGeocodeMapPin(pos.lat, pos.lng, true);
-      });
-      manualMapInstance.on('click', (ev) => {
-        manualMapMarker.setLatLng(ev.latlng);
-        reverseGeocodeMapPin(ev.latlng.lat, ev.latlng.lng, true);
-      });
-    } else {
-      manualMapInstance.invalidateSize();
-      manualMapInstance.setView([initLat, initLng], 16);
-      if (manualMapMarker) manualMapMarker.setLatLng([initLat, initLng]);
-    }
-    reverseGeocodeMapPin(initLat, initLng, false);
-  }, 120);
-}
-
-function onMapSearchInput(q) {
-  const box = document.getElementById('mapSearchResults');
-  if (!box) return;
-  if (mapSearchTimer) clearTimeout(mapSearchTimer);
-  const query = String(q || '').trim();
-  if (query.length < 3) {
-    box.classList.add('hidden');
-    return;
-  }
-  mapSearchTimer = setTimeout(async () => {
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=in&limit=5&q=${encodeURIComponent(query)}`);
-      const list = await res.json();
-      if (!Array.isArray(list) || list.length === 0) {
-        box.classList.add('hidden');
-        return;
-      }
-      box.innerHTML = list.map((item, idx) => `
-        <div onclick="pickMapSearchResult(${item.lat}, ${item.lon}, ${idx})" data-disp="${encodeURIComponent(item.display_name)}" id="mapRes_${idx}" style="padding:9px 12px; border-bottom:1px solid var(--border-color); font-size:12px; cursor:pointer;">
-          <div style="font-weight:700;">📍 ${item.display_name.split(',')[0]}</div>
-          <div style="color:var(--text-muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.display_name}</div>
-        </div>
-      `).join('');
-      box.classList.remove('hidden');
-    } catch (e) {}
-  }, 350);
-}
-
-function pickMapSearchResult(lat, lon, idx) {
-  const box = document.getElementById('mapSearchResults');
-  const el = document.getElementById(`mapRes_${idx}`);
-  const disp = el ? decodeURIComponent(el.dataset.disp || '') : '';
-  if (box) box.classList.add('hidden');
-  const searchInp = document.getElementById('mapSearchInput');
-  if (searchInp && disp) searchInp.value = disp.split(',').slice(0, 2).join(', ');
-  if (manualMapInstance && manualMapMarker) {
-    manualMapInstance.setView([Number(lat), Number(lon)], 16);
-    manualMapMarker.setLatLng([Number(lat), Number(lon)]);
-  }
-  const line2El = document.getElementById('manualLine2');
-  if (line2El && disp) line2El.value = disp.split(',').slice(0, 2).join(', ').trim();
-  reverseGeocodeMapPin(Number(lat), Number(lon), true);
-}
-
-function applyMapPinCoords(latitude, longitude) {
-  if (manualMapInstance && manualMapMarker) {
-    manualMapInstance.setView([latitude, longitude], 17);
-    manualMapMarker.setLatLng([latitude, longitude]);
-  }
-  reverseGeocodeMapPin(latitude, longitude, true);
-  showToast('📍 Current location pinned!');
-}
-
-function fallbackBrowserGeolocation() {
-  if (!navigator.geolocation) {
-    showToast('GPS unavailable — please search area or tap on map', true);
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(
-    (pos) => applyMapPinCoords(pos.coords.latitude, pos.coords.longitude),
-    (err) => {
-      const msg = err?.code === 1
-        ? 'Location permission denied — please allow GPS or search area'
-        : 'GPS unavailable — please search area or tap on map';
-      showToast(msg, true);
-    },
-    { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 }
-  );
-}
-
-function useCurrentLocationForMap() {
-  showToast('Fetching GPS location...');
-  const lm = window.Telegram?.WebApp?.LocationManager;
-  if (lm && typeof lm.init === 'function' && typeof lm.getLocation === 'function') {
-    const tryTgLoc = () => {
-      if (lm.isLocationAvailable === false) {
-        fallbackBrowserGeolocation();
-        return;
-      }
-      lm.getLocation((loc) => {
-        if (loc && loc.latitude && loc.longitude) {
-          applyMapPinCoords(loc.latitude, loc.longitude);
-        } else {
-          fallbackBrowserGeolocation();
-        }
-      });
-    };
-    if (lm.isInited) {
-      tryTgLoc();
-    } else {
-      lm.init(() => tryTgLoc());
-    }
-    return;
-  }
-  fallbackBrowserGeolocation();
-}
-
 function openAddManualModal() {
   state.editingAddressId = null;
   const titleEl = document.getElementById('manualModalTitle');
   const btnEl = document.getElementById('btnSaveManualAddr');
-  if (titleEl) titleEl.textContent = 'Add Delivery Address';
+  if (titleEl) titleEl.textContent = 'Add Address Manually';
   if (btnEl) btnEl.textContent = 'Save Address';
-  document.getElementById('mapSearchInput').value = '';
-  document.getElementById('mapSearchResults')?.classList.add('hidden');
   document.getElementById('manualName').value = '';
   document.getElementById('manualPhone').value = '';
   document.getElementById('manualLine1').value = '';
   document.getElementById('manualLine2').value = '';
   const lm = document.getElementById('manualLandmark');
   if (lm) lm.value = '';
-  document.getElementById('manualCity').value = state.selectedAddress?.city || 'Patna';
+  document.getElementById('manualCity').value = state.selectedAddress?.city || '';
   selectManualTag('HOME');
   document.getElementById('modalAddManual').classList.remove('hidden');
-  initManualAddressMap(state.selectedAddress?.lat, state.selectedAddress?.lng);
 }
 
 function openEditAddressModal(addressId) {
@@ -919,10 +744,8 @@ function openEditAddressModal(addressId) {
   state.editingAddressId = addressId;
   const titleEl = document.getElementById('manualModalTitle');
   const btnEl = document.getElementById('btnSaveManualAddr');
-  if (titleEl) titleEl.textContent = 'Edit Delivery Address';
+  if (titleEl) titleEl.textContent = 'Edit Address';
   if (btnEl) btnEl.textContent = 'Update Address';
-  document.getElementById('mapSearchInput').value = '';
-  document.getElementById('mapSearchResults')?.classList.add('hidden');
   document.getElementById('manualName').value = (addr.name || '').trim();
   document.getElementById('manualPhone').value = String(addr.phone || addr.mobile || '').replace(/^\+91\s*/, '').trim();
   document.getElementById('manualLine1').value = addr.flat_no || addr.address_line1 || '';
@@ -932,7 +755,6 @@ function openEditAddressModal(addressId) {
   document.getElementById('manualCity').value = addr.city || '';
   selectManualTag(addr.tag || 'HOME');
   document.getElementById('modalAddManual').classList.remove('hidden');
-  initManualAddressMap(addr.lat, addr.lng);
 }
 function closeModal(id) {
   document.getElementById(id).classList.add('hidden');
@@ -997,8 +819,6 @@ async function submitAddManual() {
         addressLine2: [addressLine2, landmark].filter(Boolean).join(', '),
         city,
         tag,
-        lat: state.manualMapLat,
-        lng: state.manualMapLng,
       }),
     });
     const data = await res.json();

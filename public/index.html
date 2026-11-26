@@ -10,8 +10,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="/css/style.css?v=20261126" />
   <style>
 :root {
@@ -4110,36 +4108,12 @@ button:disabled {
     </div>
 
     <div class="modal-overlay hidden" id="modalAddManual">
-      <div class="modal-box" style="max-height:92vh; overflow-y:auto; padding:16px;">
-        <div class="modal-header" style="margin-bottom:10px;">
-          <h3 id="manualModalTitle">Add Delivery Address</h3>
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 id="manualModalTitle">Add Address Manually</h3>
           <button class="modal-close" onclick="closeModal('modalAddManual')">✕</button>
         </div>
 
-        <!-- Map Search Box -->
-        <div style="position:relative; margin-bottom:10px;">
-          <input type="text" id="mapSearchInput" placeholder="🔍 Search area, building or street..." class="modal-input" style="margin-bottom:0;" oninput="onMapSearchInput(this.value)" />
-          <div id="mapSearchResults" class="hidden" style="position:absolute; left:0; right:0; top:100%; z-index:999; background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; margin-top:4px; max-height:170px; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.14);"></div>
-        </div>
-
-        <!-- Interactive Leaflet Map -->
-        <div style="position:relative; border-radius:14px; overflow:hidden; border:1px solid var(--border-color); margin-bottom:10px;">
-          <div id="manualMapContainer" style="width:100%; height:205px; background:#e5e7eb;"></div>
-          <button type="button" onclick="useCurrentLocationForMap()" style="position:absolute; right:10px; bottom:24px; z-index:500; background:#ffffff; color:#4f46e5; border:1px solid rgba(99,102,241,0.3); border-radius:999px; padding:6px 12px; font-size:11.5px; font-weight:700; box-shadow:0 4px 12px rgba(0,0,0,0.15); cursor:pointer; display:flex; align-items:center; gap:5px;">
-            🎯 Use Current Location
-          </button>
-        </div>
-
-        <!-- Selected Pin Address Preview -->
-        <div style="display:flex; align-items:flex-start; gap:8px; padding:8px 10px; background:var(--input-bg); border:1px solid var(--border-color); border-radius:12px; margin-bottom:12px;">
-          <span style="font-size:16px; line-height:1.2;">📍</span>
-          <div style="min-width:0; flex:1;">
-            <div id="mapPinTitle" style="font-weight:800; font-size:13px; color:var(--text-main);">Pin Location on Map</div>
-            <div id="mapPinFullAddress" style="font-size:11.5px; color:var(--text-muted); line-height:1.35; margin-top:2px;">Move pin or search area to set exact coordinates</div>
-          </div>
-        </div>
-
-        <div style="font-weight:800; font-size:13.5px; margin-bottom:8px;">🏠 Address & Contact Details</div>
         <div style="display:flex; align-items:center; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
           <span style="font-size:12px; color:var(--text-muted); font-weight:600; margin-right:2px;">Tag:</span>
           <button type="button" class="acc-chip active" id="tagPillHOME" onclick="selectManualTag('HOME')">🏠 Home</button>
@@ -4148,14 +4122,14 @@ button:disabled {
           <input type="hidden" id="manualTag" value="HOME" />
         </div>
 
-        <input type="text" id="manualLine1" placeholder="🏠 Flat / House / Floor / Building No. *" class="modal-input" />
-        <input type="text" id="manualLine2" placeholder="📍 Area / Street / Colony / Apartment *" class="modal-input" />
+        <input type="text" id="manualName" placeholder="👤 Receiver Name (e.g. Aman) *" class="modal-input" />
+        <input type="tel" id="manualPhone" placeholder="📞 Mobile Number *" class="modal-input" />
+        <input type="text" id="manualLine1" placeholder="🏠 Flat / House no. / Building *" class="modal-input" />
+        <input type="text" id="manualLine2" placeholder="📍 Area / Colony / Street (e.g. Bazar Samiti, Kankarbagh) *" class="modal-input" />
         <div style="display:flex; gap:8px;">
           <input type="text" id="manualLandmark" placeholder="🧭 Landmark (Optional)" class="modal-input" style="flex:1;" />
-          <input type="text" id="manualCity" placeholder="🏙️ City *" class="modal-input" style="flex:1;" />
+          <input type="text" id="manualCity" placeholder="🏙️ City (e.g. Patna) *" class="modal-input" style="flex:1;" />
         </div>
-        <input type="text" id="manualName" placeholder="👤 Receiver Name *" class="modal-input" />
-        <input type="tel" id="manualPhone" placeholder="📞 Receiver Phone Number *" class="modal-input" />
 
         <button class="btn-primary" id="btnSaveManualAddr" onclick="submitAddManual()">Save Address</button>
       </div>
@@ -4272,6 +4246,6 @@ button:disabled {
 
   </div>
 
-  <script src="/js/app.js?v=20261127_2"></script>
+  <script src="/js/app.js?v=20261127_3"></script>
 </body>
 </html>
