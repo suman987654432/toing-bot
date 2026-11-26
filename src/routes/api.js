@@ -132,13 +132,13 @@ const geocodeAddress = async (queries = []) => {
 		const parts = cleanQ.split(',').map((p) => p.trim()).filter(Boolean);
 		if (parts.length >= 2) {
 			const words = parts[0].split(/\s+/).filter((w) => w.length > 2 && !/^(floor|flat|room|house|hostel|boys|girls|no|near|opp|sector|block)$/i.test(w));
-			// When full line has many words (e.g. "sanskaram boys hostel ratnagiri bhopal"), try the locality tail first so geocoder doesn't fuzzy-match a distant outskirt
-			if (words.length > 3) {
+			// When line has 3+ words (e.g. "sanskaram boys hostel ratnagiri bhopal"), try the locality tail first so geocoder doesn't fuzzy-match a distant outskirt
+			if (words.length >= 3) {
 				expanded.push(`${words.slice(-2).join(' ')}, ${parts.slice(1).join(', ')}`);
 				expanded.push(`${words.slice(-3).join(' ')}, ${parts.slice(1).join(', ')}`);
 			}
 			expanded.push(cleanQ);
-			if (words.length >= 2 && words.length <= 3) {
+			if (words.length === 2) {
 				expanded.push(`${words.slice(-2).join(' ')}, ${parts.slice(1).join(', ')}`);
 			}
 		} else {
@@ -685,6 +685,7 @@ router.post('/addresses/add-link', async (req, res) => {
 		const finalLng = lng || active.addresses?.[0]?.lng || 85.1587;
 		let swiggyAddrId = '';
 		if (active.tid && active.token) {
+			const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
 			const swAdd = await SwiggyService.addAddress({
 				name: resolvedName || active.userName || 'Delivery User',
 				phone: active.phone,
@@ -695,7 +696,7 @@ router.post('/addresses/add-link', async (req, res) => {
 				lat: finalLat,
 				lng: finalLng,
 				tag: 'OTHER',
-			}, active.tid, active.token, active.userId);
+			}, active.tid, active.token, resolvedUid);
 			if (swAdd.success && swAdd.addressId) swiggyAddrId = swAdd.addressId;
 		}
 		const newAddress = {
@@ -758,6 +759,7 @@ router.post('/addresses/add-manual', async (req, res) => {
 		const finalLng = resolvedLng || active.addresses?.[0]?.lng || 85.1587;
 		let swiggyAddrId = '';
 		if (active.tid && active.token) {
+			const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
 			const swAdd = await SwiggyService.addAddress({
 				name: name || active.userName || 'Delivery User',
 				phone: phone || active.phone,
@@ -770,7 +772,7 @@ router.post('/addresses/add-manual', async (req, res) => {
 				lat: finalLat,
 				lng: finalLng,
 				tag: tag || 'OTHER',
-			}, active.tid, active.token, active.userId);
+			}, active.tid, active.token, resolvedUid);
 			if (swAdd.success && swAdd.addressId) swiggyAddrId = swAdd.addressId;
 		}
 		const newAddress = {
@@ -847,6 +849,7 @@ router.put('/addresses/:id', async (req, res) => {
 
 		// Sync edited address to Swiggy so it gets a real Swiggy address_id (for cart delivery & order placement)
 		if (active.tid && active.token) {
+			const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
 			const swAdd = await SwiggyService.addAddress({
 				name: updatedFields.name,
 				phone: updatedFields.mobile || updatedFields.phone,
@@ -859,7 +862,7 @@ router.put('/addresses/:id', async (req, res) => {
 				lat: updatedFields.lat,
 				lng: updatedFields.lng,
 				tag: updatedFields.tag,
-			}, active.tid, active.token, active.userId);
+			}, active.tid, active.token, resolvedUid);
 			if (swAdd.success && swAdd.addressId) {
 				updatedFields.id = swAdd.addressId;
 			}
