@@ -2002,6 +2002,10 @@ async function verifyBharatPeRecharge(isAuto = false) {
       updateWalletUi();
       loadWallet();
       closeWalletModal();
+    } else if (!data.success && data.error) {
+      const stEl = document.getElementById('bharatPePollStatus');
+      if (stEl) stEl.innerHTML = `<span style="color:#dc2626; font-weight:700; font-size:12px;">⚠️ ${data.error}</span>`;
+      if (!isAuto) showToast(data.error, true);
     } else if (!isAuto) {
       showToast(data.error || data.message || 'Payment not received yet', true);
     }

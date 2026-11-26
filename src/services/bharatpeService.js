@@ -45,9 +45,12 @@ const BharatPeService = {
         },
         headers: {
           token,
-          'user-agent': 'Mozilla/5.0',
+          accept: 'application/json, text/plain, */*',
+          origin: 'https://enterprise.bharatpe.in',
+          referer: 'https://enterprise.bharatpe.in/',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         },
-        timeout: 10000,
+        timeout: 15000,
       });
 
       const txns = response.data?.data?.transactions || [];
@@ -56,9 +59,10 @@ const BharatPeService = {
         transactions: txns,
       };
     } catch (err) {
+      console.error('[BharatPe API Error]:', err.response?.status, err.response?.data || err.message);
       return {
         success: false,
-        error: err.response?.data?.message || err.message,
+        error: err.response?.data?.message || `BharatPe API ${err.response?.status || ''} ${err.message}`.trim(),
         transactions: [],
       };
     }
