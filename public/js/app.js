@@ -840,24 +840,57 @@ function pickMapSearchResult(lat, lon, idx) {
   reverseGeocodeMapPin(Number(lat), Number(lon), true);
 }
 
-function useCurrentLocationForMap() {
+function applyMapPinCoords(latitude, longitude) {
+  if (manualMapInstance && manualMapMarker) {
+    manualMapInstance.setView([latitude, longitude], 17);
+    manualMapMarker.setLatLng([latitude, longitude]);
+  }
+  reverseGeocodeMapPin(latitude, longitude, true);
+  showToast('📍 Current location pinned!');
+}
+
+function fallbackBrowserGeolocation() {
   if (!navigator.geolocation) {
-    showToast('Geolocation not supported', true);
+    showToast('GPS unavailable — please search area or tap on map', true);
     return;
   }
-  showToast('Fetching GPS location...');
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const { latitude, longitude } = pos.coords;
-      if (manualMapInstance && manualMapMarker) {
-        manualMapInstance.setView([latitude, longitude], 17);
-        manualMapMarker.setLatLng([latitude, longitude]);
-      }
-      reverseGeocodeMapPin(latitude, longitude, true);
+    (pos) => applyMapPinCoords(pos.coords.latitude, pos.coords.longitude),
+    (err) => {
+      const msg = err?.code === 1
+        ? 'Location permission denied — please allow GPS or search area'
+        : 'GPS unavailable — please search area or tap on map';
+      showToast(msg, true);
     },
-    () => showToast('Location permission denied', true),
-    { enableHighAccuracy: true, timeout: 8000 }
+    { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 }
   );
+}
+
+function useCurrentLocationForMap() {
+  showToast('Fetching GPS location...');
+  const lm = window.Telegram?.WebApp?.LocationManager;
+  if (lm && typeof lm.init === 'function' && typeof lm.getLocation === 'function') {
+    const tryTgLoc = () => {
+      if (lm.isLocationAvailable === false) {
+        fallbackBrowserGeolocation();
+        return;
+      }
+      lm.getLocation((loc) => {
+        if (loc && loc.latitude && loc.longitude) {
+          applyMapPinCoords(loc.latitude, loc.longitude);
+        } else {
+          fallbackBrowserGeolocation();
+        }
+      });
+    };
+    if (lm.isInited) {
+      tryTgLoc();
+    } else {
+      lm.init(() => tryTgLoc());
+    }
+    return;
+  }
+  fallbackBrowserGeolocation();
 }
 
 function openAddManualModal() {
