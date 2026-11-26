@@ -5,6 +5,34 @@ if (window.Telegram && window.Telegram.WebApp) {
   tg.expand();
 }
 
+// Per-user isolation ID (Telegram User ID inside Mini App, or persistent browser ID)
+function getTelegramUserId() {
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  if (tgUser && tgUser.id) return String(tgUser.id);
+  let localId = localStorage.getItem('toing_client_id');
+  if (!localId) {
+    localId = 'web_' + Math.random().toString(36).slice(2, 12);
+    localStorage.setItem('toing_client_id', localId);
+  }
+  return localId;
+}
+
+// Automatically attach x-tg-user-id header on every /api/* request
+const _origFetch = window.fetch;
+window.fetch = function (input, init = {}) {
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  if (url.startsWith('/api')) {
+    const nextInit = { ...init };
+    const headers = new Headers(nextInit.headers || {});
+    if (!headers.has('x-tg-user-id')) {
+      headers.set('x-tg-user-id', getTelegramUserId());
+    }
+    nextInit.headers = headers;
+    return _origFetch.call(this, input, nextInit);
+  }
+  return _origFetch.call(this, input, init);
+};
+
 // Global App State
 const state = {
   activeTab: 'address', // Default to Address tab as requested
@@ -65,9 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnSendOtpText) btnSendOtpText.textContent = 'Verify OTP';
   }
 
-  loadAccounts().then(() => {
-    loadAddresses();
-  });
+  Promise.all([loadAccounts(), loadAddresses()]);
 });
 
 // Toast notification helper
@@ -135,9 +161,10 @@ function switchTab(tabName) {
     updateFloatingCartBar();
   }
 
-  // Trigger contextual data
-  if (tabName === 'address') loadAddresses();
-  if (tabName === 'search') performSearch();
+  // Trigger contextual data only if not already loaded (instant tab switching)
+  if (tabName === 'address' && state.addresses.length === 0) loadAddresses();
+  if (tabName === 'search' && (!state.lastRestaurants || state.lastRestaurants.length === 0)) performSearch();
+  if (tabName === 'orders' && !state.ordersCache) fetchOrders();
   if (tabName === 'cart') updateCartView();
   if (tabName === 'orders') fetchOrders();
   if (tabName === 'bulk') updateBulkView();
@@ -487,11 +514,13 @@ function toggleAccountDropdown() {
 // ==========================================
 // 2. ADDRESS MANAGEMENT (MATCHING IMAGE 1)
 // ==========================================
-async function loadAddresses() {
-  addressList.innerHTML = '<div class="loading-state">Loading addresses...</div>';
+async function loadAddresses(forceRefresh = false) {
+  if (state.addresses.length === 0) {
+    addressList.innerHTML = '<div class="loading-state">Loading addresses...</div>';
+  }
 
   try {
-    const res = await fetch('/api/addresses');
+    const res = await fetch(`/api/addresses${forceRefresh ? '?refresh=1' : ''}`);
     const data = await res.json();
     state.addresses = data.addresses || [];
     state.selectedAddressId = data.selectedAddressId || state.addresses[0]?.id || '';
@@ -955,7 +984,7 @@ function renderMenuItems() {
             ${item.description ? `<div class="dish-item-desc">${item.description}</div>` : ''}
           </div>
           <div class="dish-img-action-wrap">
-            ${item.imageUrl ? `<img class="dish-thumb-img" src="${item.imageUrl}" alt="${item.name}" onerror="if(!this.dataset.retried){this.dataset.retried='1'; this.src=this.src.replace('media-assets.swiggy.com', 'toing-media-assets.swiggy.com');}" />` : '<div class="dish-thumb-empty"></div>'}
+            ${item.imageUrl ? `<img class="dish-thumb-img" loading="lazy" decoding="async" src="${item.imageUrl}" alt="${item.name}" onerror="if(!this.dataset.retried){this.dataset.retried='1'; this.src=this.src.replace('media-assets.swiggy.com', 'toing-media-assets.swiggy.com');}" />` : '<div class="dish-thumb-empty"></div>'}
             <div class="dish-btn-overlay">
               ${qty > 0 ? `
                 <div class="qty-counter-pill" id="qty-pill-${item.id}">
@@ -1666,10 +1695,11 @@ async function fetchOrders() {
     }
 
     let html = '';
+    state.ordersCache = orders;
     orders.forEach((o) => {
       const itemsList = o.items ? o.items.map((it) => `${it.name} (x${it.quantity})`).join(', ') : '';
       html += `
-        <div class="address-card-item">
+        <div class="address-card-item" style="cursor:pointer;" onclick="openOrderDetails('${o.order_id}')">
           <div class="address-card-top">
             <span class="badge-tag tag-other">ORDER #${o.order_id}</span>
             <span class="badge-tag tag-account">${(o.order_status || 'DELIVERED').toUpperCase()}</span>
@@ -1677,12 +1707,59 @@ async function fetchOrders() {
           <div class="address-user-line">${o.restaurant_name} • ₹${o.order_total}</div>
           ${itemsList ? `<div class="address-text-full" style="color:var(--primary); font-weight:600; margin:2px 0;">🍴 ${itemsList}</div>` : ''}
           <div class="address-text-full">Delivered to: ${o.delivery_address || 'Delivery Address'}</div>
+          <div style="font-size:11px; color:var(--primary); font-weight:700; margin-top:6px; text-align:right;">Tap to track & view details ›</div>
         </div>
       `;
     });
     container.innerHTML = html;
   } catch (e) {
     container.innerHTML = '<div class="empty-hint">Failed to load orders from Swiggy.</div>';
+  }
+}
+
+async function openOrderDetails(orderId) {
+  const modal = document.getElementById('modalOrderDetail');
+  const title = document.getElementById('orderModalTitle');
+  const body = document.getElementById('orderModalBody');
+  if (!modal || !body) return;
+
+  if (title) title.textContent = `Order #${orderId}`;
+  body.innerHTML = '<div class="loading-state" style="padding:18px 0;">Fetching live status from Swiggy...</div>';
+  modal.classList.remove('hidden');
+
+  const cached = (state.ordersCache || []).find((o) => String(o.order_id) === String(orderId));
+
+  try {
+    const res = await fetch(`/api/orders/${orderId}`);
+    const data = await res.json();
+    const ord = data.liveOrder || data.order || cached || { order_id: orderId };
+    const track = data.trackData?.data || data.trackData || {};
+
+    const status = (track.order_status || ord.order_status || cached?.order_status || 'PREPARING').toUpperCase();
+    const restName = ord.restaurant_name || cached?.restaurant_name || 'Restaurant';
+    const total = ord.order_total || cached?.order_total || '0';
+    const address = ord.delivery_address?.address || ord.delivery_address || cached?.delivery_address || 'Delivery Address';
+    const items = ord.order_items || ord.items || cached?.items || [];
+    const statusMsg = track.message || track.statusMessage || data.trackData?.statusMessage || '';
+
+    body.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-weight:800; font-size:15px;">${restName}</span>
+        <span class="badge-tag tag-account">${status}</span>
+      </div>
+      ${statusMsg ? `<div style="background:rgba(124,58,237,0.08); color:var(--primary); padding:8px 10px; border-radius:8px; font-weight:600; margin-bottom:10px;">🛵 ${statusMsg}</div>` : ''}
+      <div style="border-top:1px solid var(--border-color); padding-top:8px; margin-bottom:10px;">
+        <div style="font-weight:700; margin-bottom:4px; color:var(--text-muted); font-size:11.5px;">ITEMS</div>
+        ${items.length ? items.map((it) => `<div style="display:flex; justify-content:space-between; margin:3px 0;"><span>${it.name} × ${it.quantity || 1}</span><span>₹${it.cost ? Math.round(it.cost / 100) : (it.sub_total || '')}</span></div>`).join('') : '<div>No item breakdown available</div>'}
+      </div>
+      <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; border-top:1px solid var(--border-color); padding-top:8px; margin-bottom:10px;">
+        <span>Total Paid</span>
+        <span>₹${total}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted);">📍 ${address}</div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="empty-hint">Could not fetch live details for Order #${orderId}.</div>`;
   }
 }
 

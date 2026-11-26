@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const zlib = require('zlib');
 const { connectDB } = require('./config/db');
 const apiRoutes = require('./routes/api');
 const { initBot } = require('./bot');
@@ -9,6 +10,31 @@ const { initBot } = require('./bot');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const WEBAPP_URL = process.env.WEBAPP_URL || `http://localhost:${PORT}`;
+
+// Built-in lightweight Gzip compression for fast mobile loading over tunnels
+app.use((req, res, next) => {
+  const acceptEnc = req.headers['accept-encoding'] || '';
+  if (!acceptEnc.includes('gzip')) return next();
+
+  const origSend = res.send.bind(res);
+  res.send = (body) => {
+    if (res.headersSent || !body) return origSend(body);
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
+    if (buf.length < 1024) return origSend(body);
+    if (!Buffer.isBuffer(body) && typeof body !== 'string' && !res.getHeader('Content-Type')) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    }
+    zlib.gzip(buf, (err, compressed) => {
+      if (err) return origSend(body);
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Vary', 'Accept-Encoding');
+      res.removeHeader('Content-Length');
+      res.end(compressed);
+    });
+    return res;
+  };
+  next();
+});
 
 // Middlewares
 app.use(cors());
@@ -19,8 +45,15 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve frontend static files
-app.use(express.static(path.join(__dirname, '../public')));
+// Serve frontend static files with smart cache headers
+app.use(express.static(path.join(__dirname, '../public'), {
+  maxAge: '5m',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 // API Routes
 app.use('/api', apiRoutes);

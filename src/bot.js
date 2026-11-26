@@ -103,7 +103,8 @@ const initBot = (webAppUrl) => {
     bot.on('callback_query', async (ctx) => {
       const data = ctx.callbackQuery?.data || ctx.data;
       if (data === 'view_accounts') {
-        const accounts = await AccountRepo.getAll();
+        const tgUid = String(ctx.from?.id || 'default');
+        const accounts = await AccountRepo.getAll(tgUid);
         let text = '📱 *Saved Accounts:*\n\n';
         if (!accounts || accounts.length === 0) {
           text = '❌ No accounts saved yet. Open Toing Pro to add your first account.';

@@ -2,10 +2,16 @@ const mongoose = require('mongoose');
 
 const accountSchema = new mongoose.Schema(
   {
+    telegramUserId: {
+      type: String,
+      required: true,
+      index: true,
+      default: 'default',
+      trim: true,
+    },
     phone: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     tid: {
@@ -62,6 +68,8 @@ const accountSchema = new mongoose.Schema(
   }
 );
 
+accountSchema.index({ telegramUserId: 1, phone: 1 }, { unique: true });
+
 let MongooseAccountModel;
 try {
   MongooseAccountModel = mongoose.model('Account', accountSchema);
@@ -69,76 +77,92 @@ try {
   MongooseAccountModel = mongoose.models.Account;
 }
 
+// Drop legacy global unique phone index if it exists so multiple Telegram users can add accounts independently
+if (MongooseAccountModel && MongooseAccountModel.collection) {
+  MongooseAccountModel.collection.dropIndex('phone_1').catch(() => {});
+}
+
 // In-memory cache only if MongoDB is still connecting (zero disk files)
 const memAccounts = new Map();
 
+const normTgId = (tgUserId) => String(tgUserId || 'default').trim() || 'default';
+
 const AccountRepo = {
-  async getAll() {
+  async getAll(tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      return await MongooseAccountModel.find({}).sort({ updatedAt: -1 });
+      return await MongooseAccountModel.find({ telegramUserId: uid }).sort({ updatedAt: -1 });
     }
-    return Array.from(memAccounts.values());
+    return Array.from(memAccounts.values()).filter((a) => normTgId(a.telegramUserId) === uid);
   },
 
-  async getActive() {
+  async getActive(tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      let active = await MongooseAccountModel.findOne({ isActive: true });
+      let active = await MongooseAccountModel.findOne({ telegramUserId: uid, isActive: true });
       if (!active) {
-        active = await MongooseAccountModel.findOne({}).sort({ updatedAt: -1 });
+        active = await MongooseAccountModel.findOne({ telegramUserId: uid }).sort({ updatedAt: -1 });
       }
       return active;
     }
-    const list = Array.from(memAccounts.values());
+    const list = Array.from(memAccounts.values()).filter((a) => normTgId(a.telegramUserId) === uid);
     return list.find((a) => a.isActive) || list[0] || null;
   },
 
-  async findByPhone(phone) {
+  async findByPhone(phone, tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      return await MongooseAccountModel.findOne({ phone });
+      return await MongooseAccountModel.findOne({ telegramUserId: uid, phone });
     }
-    return memAccounts.get(phone) || null;
+    return memAccounts.get(`${uid}:${phone}`) || null;
   },
 
-  async findById(id) {
+  async findById(id, tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      return await MongooseAccountModel.findById(id);
+      return await MongooseAccountModel.findOne({ _id: id, telegramUserId: uid });
     }
     for (const acc of memAccounts.values()) {
-      if (acc._id === id || acc.phone === id) return acc;
+      if (normTgId(acc.telegramUserId) === uid && (acc._id === id || acc.phone === id)) return acc;
     }
     return null;
   },
 
   async saveOrUpdate(accountData) {
+    const uid = normTgId(accountData.telegramUserId);
+    const payload = { ...accountData, telegramUserId: uid };
     if (mongoose.connection.readyState === 1) {
-      if (accountData.isActive) {
-        await MongooseAccountModel.updateMany({}, { isActive: false });
+      if (payload.isActive) {
+        await MongooseAccountModel.updateMany({ telegramUserId: uid }, { isActive: false });
       }
-      const existing = await MongooseAccountModel.findOne({ phone: accountData.phone });
+      const existing = await MongooseAccountModel.findOne({ telegramUserId: uid, phone: payload.phone });
       if (existing) {
-        Object.assign(existing, accountData);
+        Object.assign(existing, payload);
         existing.lastLogin = new Date();
         return await existing.save();
       }
-      return await MongooseAccountModel.create(accountData);
+      return await MongooseAccountModel.create(payload);
     }
 
-    if (accountData.isActive) {
-      for (const a of memAccounts.values()) a.isActive = false;
+    if (payload.isActive) {
+      for (const a of memAccounts.values()) {
+        if (normTgId(a.telegramUserId) === uid) a.isActive = false;
+      }
     }
     const saved = {
       _id: 'acc_' + Date.now(),
-      ...accountData,
+      ...payload,
       updatedAt: new Date().toISOString(),
     };
-    memAccounts.set(accountData.phone, saved);
+    memAccounts.set(`${uid}:${payload.phone}`, saved);
     return saved;
   },
 
-  async setActive(id) {
+  async setActive(id, tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      await MongooseAccountModel.updateMany({}, { isActive: false });
-      const acc = await MongooseAccountModel.findById(id);
+      await MongooseAccountModel.updateMany({ telegramUserId: uid }, { isActive: false });
+      const acc = await MongooseAccountModel.findOne({ _id: id, telegramUserId: uid });
       if (acc) {
         acc.isActive = true;
         await acc.save();
@@ -148,6 +172,7 @@ const AccountRepo = {
 
     let target = null;
     for (const a of memAccounts.values()) {
+      if (normTgId(a.telegramUserId) !== uid) continue;
       if (a._id === id || a.phone === id) {
         a.isActive = true;
         target = a;
@@ -158,22 +183,24 @@ const AccountRepo = {
     return target;
   },
 
-  async delete(id) {
+  async delete(id, tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      return await MongooseAccountModel.findByIdAndDelete(id);
+      return await MongooseAccountModel.findOneAndDelete({ _id: id, telegramUserId: uid });
     }
-    for (const [phone, acc] of memAccounts.entries()) {
-      if (acc._id === id || acc.phone === id) {
-        memAccounts.delete(phone);
+    for (const [key, acc] of memAccounts.entries()) {
+      if (normTgId(acc.telegramUserId) === uid && (acc._id === id || acc.phone === id)) {
+        memAccounts.delete(key);
         return true;
       }
     }
     return false;
   },
 
-  async toggleUsed(id) {
+  async toggleUsed(id, tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      const acc = await MongooseAccountModel.findById(id);
+      const acc = await MongooseAccountModel.findOne({ _id: id, telegramUserId: uid });
       if (acc) {
         acc.isUsed = !acc.isUsed;
         return await acc.save();
@@ -181,7 +208,7 @@ const AccountRepo = {
       return null;
     }
     for (const acc of memAccounts.values()) {
-      if (acc._id === id || acc.phone === id) {
+      if (normTgId(acc.telegramUserId) === uid && (acc._id === id || acc.phone === id)) {
         acc.isUsed = !acc.isUsed;
         return acc;
       }
@@ -189,11 +216,14 @@ const AccountRepo = {
     return null;
   },
 
-  async deleteAll() {
+  async deleteAll(tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      return await MongooseAccountModel.deleteMany({});
+      return await MongooseAccountModel.deleteMany({ telegramUserId: uid });
     }
-    memAccounts.clear();
+    for (const [key, acc] of memAccounts.entries()) {
+      if (normTgId(acc.telegramUserId) === uid) memAccounts.delete(key);
+    }
     return true;
   },
 

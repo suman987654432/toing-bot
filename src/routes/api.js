@@ -3,17 +3,30 @@ const router = express.Router();
 const { AccountRepo } = require('../models/Account');
 const SwiggyService = require('../services/swiggyService');
 
-// In-memory OTP session map: mobile -> { tid, timestamp }
+// In-memory OTP session map: `${tgUserId}:${mobile}` -> { tid, timestamp }
 const otpSessions = new Map();
 
-// Global in-memory list for newly placed orders in current session
-if (!global.placedOrders) {
-  global.placedOrders = [];
+// Per-user in-memory list for newly placed orders in current session
+if (!global.placedOrdersByUser) {
+  global.placedOrdersByUser = new Map();
 }
+const getUserPlacedOrders = (tgUserId) => {
+  const uid = String(tgUserId || 'default');
+  if (!global.placedOrdersByUser.has(uid)) {
+    global.placedOrdersByUser.set(uid, []);
+  }
+  return global.placedOrdersByUser.get(uid);
+};
 
-// Helper to get active account credentials
-const getActiveCreds = async () => {
-  const active = await AccountRepo.getActive();
+// Extract Telegram User ID (or browser client ID) from request
+const getTgUserId = (req) => {
+  const raw = req.headers['x-tg-user-id'] || req.query?.tgUserId || req.body?.tgUserId || 'default';
+  return String(raw).trim() || 'default';
+};
+
+// Helper to get active account credentials for the requesting Telegram user
+const getActiveCreds = async (tgUserId = 'default') => {
+  const active = await AccountRepo.getActive(tgUserId);
   return {
     active,
     tid: active?.tid || '',
@@ -26,20 +39,20 @@ const getActiveCreds = async () => {
    1. ACCOUNTS & AUTH
    ========================================= */
 
-// Get all saved accounts
+// Get all saved accounts (scoped to current Telegram user)
 router.get('/accounts', async (req, res) => {
   try {
-    const accounts = await AccountRepo.getAll();
+    const accounts = await AccountRepo.getAll(getTgUserId(req));
     res.json({ success: true, accounts });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Get currently active account
+// Get currently active account (scoped to current Telegram user)
 router.get('/accounts/active', async (req, res) => {
   try {
-    const active = await AccountRepo.getActive();
+    const active = await AccountRepo.getActive(getTgUserId(req));
     res.json({ success: true, active });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -49,6 +62,7 @@ router.get('/accounts/active', async (req, res) => {
 // Step 1: Send OTP
 router.post('/accounts/send-otp', async (req, res) => {
   try {
+    const tgUserId = getTgUserId(req);
     const { mobile } = req.body;
     if (!mobile) {
       return res.status(400).json({ success: false, error: 'Mobile number is required' });
@@ -58,7 +72,7 @@ router.post('/accounts/send-otp', async (req, res) => {
     const result = await SwiggyService.sendOtp(cleanMobile);
 
     if (result.success && result.tid) {
-      otpSessions.set(cleanMobile, { tid: result.tid, time: Date.now() });
+      otpSessions.set(`${tgUserId}:${cleanMobile}`, { tid: result.tid, time: Date.now() });
       return res.json({
         success: true,
         message: 'OTP sent successfully to +91 ' + cleanMobile,
@@ -78,10 +92,11 @@ router.post('/accounts/send-otp', async (req, res) => {
 // Step 2: Verify OTP
 router.post('/accounts/verify-otp', async (req, res) => {
   try {
+    const tgUserId = getTgUserId(req);
     const { mobile, otp, tid } = req.body;
     const cleanMobile = String(mobile || '').replace(/\D/g, '').slice(-10);
 
-    const sessionTid = tid || (cleanMobile ? otpSessions.get(cleanMobile)?.tid : '') || '';
+    const sessionTid = tid || (cleanMobile ? otpSessions.get(`${tgUserId}:${cleanMobile}`)?.tid : '') || '';
     if (!sessionTid) {
       console.warn('[Verify OTP] No session TID found for mobile:', cleanMobile);
       return res.status(400).json({
@@ -90,7 +105,7 @@ router.post('/accounts/verify-otp', async (req, res) => {
       });
     }
 
-    console.log(`[Verify OTP Request] Mobile: ${cleanMobile}, OTP: ${otp}, TID: ${sessionTid.slice(0, 10)}...`);
+    console.log(`[Verify OTP Request] User: ${tgUserId}, Mobile: ${cleanMobile}, OTP: ${otp}, TID: ${sessionTid.slice(0, 10)}...`);
     const result = await SwiggyService.verifyOtp(cleanMobile, otp, sessionTid);
     console.log('[Verify OTP Swiggy Result]:', {
       success: result.success,
@@ -102,6 +117,7 @@ router.post('/accounts/verify-otp', async (req, res) => {
 
     if (result.success && result.token) {
       const accountData = {
+        telegramUserId: tgUserId,
         phone: cleanMobile || String(result.data?.mobile || result.data?.phone || '').replace(/\D/g, '').slice(-10),
         tid: result.tid || sessionTid,
         token: result.token,
@@ -114,7 +130,7 @@ router.post('/accounts/verify-otp', async (req, res) => {
       };
 
       const saved = await AccountRepo.saveOrUpdate(accountData);
-      otpSessions.delete(cleanMobile);
+      otpSessions.delete(`${tgUserId}:${cleanMobile}`);
 
       return res.json({
         success: true,
@@ -161,6 +177,7 @@ router.post('/accounts/import-json', async (req, res) => {
     }
 
     const accountData = {
+      telegramUserId: getTgUserId(req),
       phone: String(phone).replace(/\D/g, '').slice(-10) || phone,
       tid,
       token,
@@ -181,7 +198,7 @@ router.post('/accounts/import-json', async (req, res) => {
 // Switch active account
 router.post('/accounts/switch/:id', async (req, res) => {
   try {
-    const updated = await AccountRepo.setActive(req.params.id);
+    const updated = await AccountRepo.setActive(req.params.id, getTgUserId(req));
     if (!updated) {
       return res.status(404).json({ success: false, error: 'Account not found' });
     }
@@ -194,7 +211,7 @@ router.post('/accounts/switch/:id', async (req, res) => {
 // Toggle account used status
 router.post('/accounts/:id/toggle-used', async (req, res) => {
   try {
-    const acc = await AccountRepo.toggleUsed(req.params.id);
+    const acc = await AccountRepo.toggleUsed(req.params.id, getTgUserId(req));
     if (!acc) return res.status(404).json({ success: false, error: 'Account not found' });
     res.json({ success: true, isUsed: acc.isUsed });
   } catch (err) {
@@ -205,7 +222,7 @@ router.post('/accounts/:id/toggle-used', async (req, res) => {
 // Delete all accounts
 router.post('/accounts/delete-all', async (req, res) => {
   try {
-    await AccountRepo.deleteAll();
+    await AccountRepo.deleteAll(getTgUserId(req));
     res.json({ success: true, message: 'All accounts deleted' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -215,7 +232,7 @@ router.post('/accounts/delete-all', async (req, res) => {
 // Delete account
 router.delete('/accounts/:id', async (req, res) => {
   try {
-    await AccountRepo.delete(req.params.id);
+    await AccountRepo.delete(req.params.id, getTgUserId(req));
     res.json({ success: true, message: 'Account removed' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -228,15 +245,16 @@ router.delete('/accounts/:id', async (req, res) => {
 
 router.get('/addresses', async (req, res) => {
   try {
-    const active = await AccountRepo.getActive();
+    const active = await AccountRepo.getActive(getTgUserId(req));
     if (!active) {
       return res.json({ success: true, addresses: [], selectedAddressId: '' });
     }
 
     let addresses = active.addresses || [];
+    const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
 
-    // Fetch live addresses from maps.swiggy.com if credentials exist
-    if (active.tid || active.token) {
+    // Fetch live addresses from maps.swiggy.com only on explicit refresh or when cache is empty
+    if ((forceRefresh || addresses.length === 0) && (active.tid || active.token)) {
       try {
         const swiggyRes = await SwiggyService.getAddresses(active.tid, active.token, active.userId);
         if (swiggyRes.success && Array.isArray(swiggyRes.addresses) && swiggyRes.addresses.length > 0) {
@@ -294,7 +312,7 @@ router.get('/addresses', async (req, res) => {
 router.post('/addresses/select', async (req, res) => {
   try {
     const { addressId } = req.body;
-    const active = await AccountRepo.getActive();
+    const active = await AccountRepo.getActive(getTgUserId(req));
     if (!active) {
       return res.status(400).json({ success: false, error: 'No active account' });
     }
@@ -310,7 +328,7 @@ router.post('/addresses/select', async (req, res) => {
 router.post('/addresses/add-link', async (req, res) => {
   try {
     const { link, name } = req.body;
-    const active = await AccountRepo.getActive();
+    const active = await AccountRepo.getActive(getTgUserId(req));
     if (!active) {
       return res.status(400).json({ success: false, error: 'No active account' });
     }
@@ -348,7 +366,7 @@ router.post('/addresses/add-link', async (req, res) => {
 router.post('/addresses/add-manual', async (req, res) => {
   try {
     const { name, phone, addressLine1, addressLine2, city, tag, lat, lng } = req.body;
-    const active = await AccountRepo.getActive();
+    const active = await AccountRepo.getActive(getTgUserId(req));
     if (!active) {
       return res.status(400).json({ success: false, error: 'No active account' });
     }
@@ -377,7 +395,7 @@ router.post('/addresses/add-manual', async (req, res) => {
 // Delete Address
 router.delete('/addresses/:id', async (req, res) => {
   try {
-    const active = await AccountRepo.getActive();
+    const active = await AccountRepo.getActive(getTgUserId(req));
     if (active) {
       await AccountRepo.deleteAddress(active._id, req.params.id);
       if (active.tid && active.token) {
@@ -399,7 +417,7 @@ router.post('/search', async (req, res) => {
     const { query } = req.body;
     let { lat, lng, city } = req.body;
 
-    const { active, tid, token } = await getActiveCreds();
+    const { active, tid, token } = await getActiveCreds(getTgUserId(req));
 
     const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
 
@@ -439,7 +457,7 @@ router.get('/menu/:restaurantId', async (req, res) => {
   try {
     const { restaurantId } = req.params;
     let { lat, lng, areaName } = req.query;
-    const { active, tid, token } = await getActiveCreds();
+    const { active, tid, token } = await getActiveCreds(getTgUserId(req));
 
     const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
 
@@ -477,7 +495,7 @@ router.get('/menu/:restaurantId', async (req, res) => {
 
 router.post('/cart/update', async (req, res) => {
   try {
-    const { tid, token, userId } = await getActiveCreds();
+    const { tid, token, userId } = await getActiveCreds(getTgUserId(req));
     const result = await SwiggyService.updateCart(req.body, tid, token, userId);
     res.json(result);
   } catch (err) {
@@ -489,7 +507,7 @@ router.get('/coupons', async (req, res) => {
   try {
     const { restaurantId, cartValue } = req.query;
     let { lat, lng } = req.query;
-    const { active, tid, token, userId } = await getActiveCreds();
+    const { active, tid, token, userId } = await getActiveCreds(getTgUserId(req));
 
     if (!lat || !lng) {
       const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
@@ -521,7 +539,7 @@ router.post('/coupons/apply', async (req, res) => {
   try {
     const { couponCode } = req.body;
     const code = (couponCode || '').trim().toUpperCase();
-    const { tid, token, userId } = await getActiveCreds();
+    const { tid, token, userId } = await getActiveCreds(getTgUserId(req));
 
     // Call live apply coupon endpoint
     if (tid) {
@@ -551,7 +569,7 @@ router.post('/coupons/apply', async (req, res) => {
 router.post('/coupons/remove', async (req, res) => {
   try {
     const { couponCode } = req.body;
-    const { tid, token, userId } = await getActiveCreds();
+    const { tid, token, userId } = await getActiveCreds(getTgUserId(req));
     if (tid && couponCode) {
       try {
         await SwiggyService.removeCoupon(couponCode, tid, token, userId);
@@ -569,35 +587,38 @@ router.post('/coupons/remove', async (req, res) => {
 
 router.get('/orders', async (req, res) => {
   try {
-    const { active, tid, token } = await getActiveCreds();
-    const lat = active?.addresses?.[0]?.lat || 25.2730006;
-    const lng = active?.addresses?.[0]?.lng || 82.9639115;
+    const tgUserId = getTgUserId(req);
+    const { active, tid, token } = await getActiveCreds(tgUserId);
 
     const liveOrdersList = [];
 
-    // 1. Fetch live historical order details from Swiggy chkout API
-    try {
-      const sOrder = await SwiggyService.getSingleOrder('252409072133872', tid, token);
-      const pastOrders = sOrder.data?.data?.orders || [];
-      for (const ord of pastOrders) {
-        liveOrdersList.push({
-          order_id: String(ord.order_id),
-          restaurant_name: ord.restaurant_name || 'Restaurant',
-          order_total: String(ord.order_total || '52'),
-          order_status: (ord.order_status || 'DELIVERED').toUpperCase(),
-          delivery_address: ord.delivery_address?.address || active?.addresses?.[0]?.address_line1 || 'Delivery Address',
-          order_time: ord.order_time || 'Past Order',
-          items: (ord.order_items || []).map((it) => ({
-            name: it.name,
-            quantity: it.quantity || 1,
-            cost: (it.sub_total || it.item_total || 52) * 100,
-          })),
-        });
-      }
-    } catch (e) {}
+    // 1. Fetch live orders from Swiggy account orders API
+    if (tid || token) {
+      try {
+        const sOrders = await SwiggyService.getOrders(10, tid, token);
+        const pastOrders = sOrders.data?.data?.orders || [];
+        for (const ord of pastOrders) {
+          liveOrdersList.push({
+            order_id: String(ord.order_id),
+            restaurant_name: ord.restaurant_name || 'Restaurant',
+            order_total: String(ord.order_total || '0'),
+            order_status: (ord.order_status || 'DELIVERED').toUpperCase(),
+            delivery_address: ord.delivery_address?.address || active?.addresses?.[0]?.address_line1 || 'Delivery Address',
+            order_time: ord.order_time || 'Past Order',
+            items: (ord.order_items || ord.items || []).map((it) => ({
+              name: it.name,
+              quantity: it.quantity || 1,
+              cost: (it.sub_total || it.item_total || it.final_price || 0) * 100,
+            })),
+          });
+        }
+      } catch (e) {}
+    }
 
-    // Combine newly placed orders in this session with live orders
-    const allOrders = [...(global.placedOrders || []), ...liveOrdersList];
+    // Combine newly placed orders in this user's session with live orders (deduped by order_id)
+    const userOrders = getUserPlacedOrders(tgUserId);
+    const seen = new Set(userOrders.map((o) => String(o.order_id)));
+    const allOrders = [...userOrders, ...liveOrdersList.filter((o) => !seen.has(String(o.order_id)))];
 
     res.json({ success: true, data: { data: { orders: allOrders } } });
   } catch (err) {
@@ -607,14 +628,29 @@ router.get('/orders', async (req, res) => {
 
 router.get('/orders/:id', async (req, res) => {
   try {
-    const { tid, token } = await getActiveCreds();
-    const foundSessionOrder = (global.placedOrders || []).find((o) => String(o.order_id) === String(req.params.id));
-    if (foundSessionOrder) {
-      return res.json({ success: true, order: foundSessionOrder });
+    const tgUserId = getTgUserId(req);
+    const { tid, token } = await getActiveCreds(tgUserId);
+    const foundSessionOrder = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(req.params.id));
+
+    let liveOrder = null;
+    let trackData = null;
+    if (tid || token) {
+      try {
+        const sRes = await SwiggyService.getSingleOrder(req.params.id, tid, token);
+        liveOrder = sRes.data?.data?.orders?.[0] || sRes.data?.data || null;
+      } catch (e) {}
+      try {
+        const tRes = await SwiggyService.getTrackCard(req.params.id, tid, token);
+        trackData = tRes.data || null;
+      } catch (e) {}
     }
 
-    const result = await SwiggyService.getSingleOrder(req.params.id, tid, token);
-    res.json(result);
+    res.json({
+      success: true,
+      order: foundSessionOrder || liveOrder || { order_id: req.params.id },
+      liveOrder,
+      trackData,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -622,8 +658,9 @@ router.get('/orders/:id', async (req, res) => {
 
 router.post('/orders/place', async (req, res) => {
   try {
+    const tgUserId = getTgUserId(req);
     const { items, restaurantName, total, address, couponCode, paymentMethod } = req.body;
-    const { active, tid, token, userId } = await getActiveCreds();
+    const { active, tid, token, userId } = await getActiveCreds(tgUserId);
 
     const orderId = '252' + Math.floor(100000000000 + Math.random() * 900000000000);
     const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
@@ -645,7 +682,7 @@ router.post('/orders/place', async (req, res) => {
       coupon_applied: couponCode || '',
     };
 
-    global.placedOrders.unshift(newOrder);
+    getUserPlacedOrders(tgUserId).unshift(newOrder);
 
     // Call live placeOrder on Swiggy Payments
     if (tid) {
@@ -679,7 +716,7 @@ router.post('/orders/place', async (req, res) => {
 router.post('/orders/confirm', async (req, res) => {
   try {
     const { orderId } = req.body;
-    const { tid, token, userId } = await getActiveCreds();
+    const { tid, token, userId } = await getActiveCreds(getTgUserId(req));
     const result = await SwiggyService.confirmOrder(orderId, tid, token, userId);
     res.json(result);
   } catch (err) {
@@ -690,7 +727,7 @@ router.post('/orders/confirm', async (req, res) => {
 router.get('/orders/vpa-status', async (req, res) => {
   try {
     const { orderId, paasId, paymentCode } = req.query;
-    const { tid, token } = await getActiveCreds();
+    const { tid, token } = await getActiveCreds(getTgUserId(req));
     const result = await SwiggyService.getVpaTxnStatus(orderId, paasId, paymentCode, tid, token);
     res.json(result);
   } catch (err) {
@@ -705,7 +742,7 @@ router.get('/orders/vpa-status', async (req, res) => {
 router.post('/tools/claim-refer', async (req, res) => {
   try {
     const { referralCode } = req.body;
-    const { tid, token } = await getActiveCreds();
+    const { tid, token } = await getActiveCreds(getTgUserId(req));
     const result = await SwiggyService.claimReferral(referralCode, tid, token);
 
     res.json({
@@ -721,7 +758,7 @@ router.post('/tools/claim-refer', async (req, res) => {
 router.post('/tools/bulk-claim', async (req, res) => {
   try {
     const { referralCode } = req.body;
-    const accounts = await AccountRepo.getAll();
+    const accounts = await AccountRepo.getAll(getTgUserId(req));
     const results = [];
     let successCount = 0;
 
@@ -750,8 +787,9 @@ router.post('/tools/bulk-claim', async (req, res) => {
 
 router.post('/tools/bulk-order', async (req, res) => {
   try {
+    const tgUserId = getTgUserId(req);
     const { restaurantName, total } = req.body;
-    const accounts = (await AccountRepo.getAll()).filter((a) => !a.isUsed);
+    const accounts = (await AccountRepo.getAll(tgUserId)).filter((a) => !a.isUsed);
     const results = [];
 
     for (const acc of accounts.slice(0, 10)) {
@@ -763,7 +801,7 @@ router.post('/tools/bulk-order', async (req, res) => {
           success: true,
           status: 'Placed',
         });
-        await AccountRepo.toggleUsed(acc._id);
+        await AccountRepo.toggleUsed(acc._id, tgUserId);
       }
     }
 
@@ -779,7 +817,7 @@ router.post('/tools/bulk-order', async (req, res) => {
 
 router.post('/tools/scratch-card', async (req, res) => {
   try {
-    const { tid, token } = await getActiveCreds();
+    const { tid, token } = await getActiveCreds(getTgUserId(req));
     const result = await SwiggyService.assignScratchCard(tid, token);
 
     res.json({
@@ -795,18 +833,16 @@ router.post('/tools/scratch-card', async (req, res) => {
 router.post('/tools/track-card', async (req, res) => {
   try {
     const { orderId } = req.body;
-    const { active, tid, token } = await getActiveCreds();
-    const lat = active?.addresses?.[0]?.lat || 25.2730006;
-    const lng = active?.addresses?.[0]?.lng || 82.9639115;
+    const { tid, token } = await getActiveCreds(getTgUserId(req));
 
-    const result = await SwiggyService.getTrackCard(orderId || '252409072133872', lat, lng, tid, token);
+    const result = await SwiggyService.getTrackCard(orderId, tid, token);
 
     res.json({
       success: true,
       track: {
-        orderId: orderId || '252409072133872',
-        status: 'Order is being prepared and packed by the restaurant',
-        estimatedDeliveryTime: '20 mins',
+        orderId,
+        status: result.data?.data?.order_status || result.data?.statusMessage || 'Order status fetched',
+        estimatedDeliveryTime: result.data?.data?.eta || '20 mins',
         liveData: result.data || result,
       },
     });

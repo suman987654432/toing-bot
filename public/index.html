@@ -63,6 +63,13 @@ svg {
   flex-shrink: 0;
 }
 
+.dish-item-card,
+.address-card-item,
+.restaurant-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 96px;
+}
+
 .btn-icon,
 .btn-primary svg,
 .btn-secondary svg,
@@ -3320,7 +3327,7 @@ button svg {
             <span>Saved Addresses</span>
           </div>
           <div class="sec-divider"></div>
-          <button class="refresh-link" onclick="loadAddresses()">
+          <button class="refresh-link" onclick="loadAddresses(true)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polyline points="23 4 23 10 17 10" />
               <polyline points="1 20 1 14 7 14" />
@@ -3804,6 +3811,19 @@ button svg {
           </select>
         </div>
         <button class="btn-primary" onclick="submitAddManual()">Save Address</button>
+      </div>
+    </div>
+
+    <!-- Modal Order Details & Live Tracking -->
+    <div class="modal-overlay hidden" id="modalOrderDetail" onclick="if(event.target===this) closeModal('modalOrderDetail')">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 id="orderModalTitle">Order Details</h3>
+          <button class="modal-close" onclick="closeModal('modalOrderDetail')">✕</button>
+        </div>
+        <div id="orderModalBody" style="font-size:13px; color:var(--text-main); line-height:1.5;">
+          Loading live order status...
+        </div>
       </div>
     </div>
 

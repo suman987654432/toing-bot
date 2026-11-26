@@ -262,9 +262,12 @@ const SwiggyService = {
 					'current-latitude': String(lat),
 					'current-longitude': String(lng),
 				}),
+				responseType: 'arraybuffer',
 				timeout: 10000,
 			});
-			const str = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+			const str = Buffer.isBuffer(response.data)
+				? response.data.toString('latin1')
+				: (typeof response.data === 'string' ? response.data : JSON.stringify(response.data));
 			const restMarker = 'swiggy.presentation.food.v2.Restaurant';
 			const list = [];
 			let pos = 0;
@@ -464,9 +467,12 @@ const SwiggyService = {
 					latitude: String(lat),
 					longitude: String(lng),
 				}),
+				responseType: 'arraybuffer',
 				timeout: 10000,
 			});
-			const str = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+			const str = Buffer.isBuffer(response.data)
+				? response.data.toString('latin1')
+				: (typeof response.data === 'string' ? response.data : JSON.stringify(response.data));
 			const dishes = [];
 
 			// 1. Primary High-Fidelity Parser using Swiggy Dish Protobuf Marker
@@ -543,7 +549,8 @@ const SwiggyService = {
 				}
 
 				if (!price) price = originalPrice || 0;
-				if (price && (!originalPrice || originalPrice <= price)) originalPrice = Math.round(price * 1.45);
+				// Only keep originalPrice when the API genuinely reports a higher listing price than final price
+				if (!originalPrice || originalPrice <= price) originalPrice = price;
 
 				// Description / Allergens info
 				const descMatch = chunk.match(/(?:\||\b)(Allergens:[^\|]+)/i) || chunk.match(/([A-Za-z0-9\s,\.\-]{25,120})(?=\x00|\|)/);
@@ -563,12 +570,14 @@ const SwiggyService = {
 				const addonGroups = this.parseAddonGroups(chunkBuf);
 
 				if (id && name && !dishes.some((d) => d.id === id)) {
+					const finalPrice = price || 99;
+					const finalOrigPrice = (originalPrice && originalPrice > finalPrice) ? originalPrice : finalPrice;
 					dishes.push({
 						id: String(id),
 						name: name.replace(/^[\s\W]+/, '').trim(),
 						category,
-						price: price || 99,
-						originalPrice: originalPrice || Math.round((price || 99) * 1.45),
+						price: finalPrice,
+						originalPrice: finalOrigPrice,
 						isVeg,
 						description,
 						imageUrl: imageId ? `https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_300,h_300,c_fit/${imageId}` : '',
@@ -625,13 +634,15 @@ const SwiggyService = {
 						}
 					}
 					if (name && !dishes.some((x) => x.id === id)) {
+						const finalPrice = price || 99;
+						const finalOrigPrice = (originalPrice && originalPrice > finalPrice) ? originalPrice : finalPrice;
 						dishes.push({
 							id: String(id),
 							name: name.replace(/^[\s\W]+/, '').trim(),
 							category: category && category.length < 30 ? category : 'Specialties',
 							isVeg,
-							price: price || 99,
-							originalPrice: originalPrice || Math.round((price || 99) * 1.45),
+							price: finalPrice,
+							originalPrice: finalOrigPrice,
 							description: '',
 							imageUrl: imageId ? `https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_300,h_300,c_fit/${imageId}` : '',
 							customisable: false,
