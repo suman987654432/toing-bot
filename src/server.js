@@ -45,12 +45,12 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve frontend static files with smart cache headers
+// Serve frontend static files with fresh JS/HTML (no stale Telegram WebView cache)
 app.use(express.static(path.join(__dirname, '../public'), {
-  maxAge: '5m',
+  maxAge: 0,
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'no-cache');
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     }
   },
 }));
