@@ -418,59 +418,124 @@ router.post('/addresses/select', async (req, res) => {
 		});
 	}
 });
-// Add Address by Swiggy Link
+// Reverse geocode lat/lng -> full detailed address via OpenStreetMap Nominatim
+const reverseGeocodeCoords = async (lat, lng) => {
+	try {
+		const resp = await axios.get('https://nominatim.openstreetmap.org/reverse', {
+			params: { format: 'json', lat, lon: lng, addressdetails: 1 },
+			headers: { 'User-Agent': 'ToingProApp/1.0' },
+			timeout: 5000,
+		});
+		const d = resp.data || {};
+		const a = d.address || {};
+		return {
+			display: d.display_name || '',
+			area: a.suburb || a.neighbourhood || a.residential || a.road || '',
+			city: a.city || a.town || a.village || a.state_district || '',
+		};
+	} catch (e) {
+		return null;
+	}
+};
+
+// Add Address by Swiggy Link / Google Maps Link / Address Text
 router.post('/addresses/add-link', async (req, res) => {
 	try {
-		const {
-			link,
-			name
-		} = req.body;
+		const { link, name } = req.body;
+		const rawInput = String(link || '').trim();
 		const active = await AccountRepo.getActive(getTgUserId(req));
 		if (!active) {
-			return res.status(400).json({
-				success: false,
-				error: 'No active account'
-			});
+			return res.status(400).json({ success: false, error: 'No active account' });
 		}
+
 		let lat = null;
 		let lng = null;
+		let resolvedName = name || '';
+		let resolvedText = '';
+		let resolvedArea = '';
+		let resolvedCity = '';
+
+		// 1. Direct URL query params (?lat=...&lng=...) or Google Maps @lat,lng
+		const coordMatch = rawInput.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || rawInput.match(/[?&](?:q|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+		if (coordMatch) {
+			lat = parseFloat(coordMatch[1]);
+			lng = parseFloat(coordMatch[2]);
+		}
 		try {
-			const urlObj = new URL(link);
+			const urlObj = new URL(rawInput);
 			if (urlObj.searchParams.get('lat')) lat = parseFloat(urlObj.searchParams.get('lat'));
 			if (urlObj.searchParams.get('lng')) lng = parseFloat(urlObj.searchParams.get('lng'));
 		} catch (e) {}
-		if (!lat || !lng) {
-			const geo = await geocodeAddress([`${link}, India`, link]);
+
+		// 2. If Swiggy onelink / short URL, follow redirect or inspect inner URL
+		if (!lat && /^https?:\/\//i.test(rawInput)) {
+			try {
+				const r = await axios.get(rawInput, {
+					maxRedirects: 5,
+					headers: { 'user-agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36' },
+					timeout: 6000,
+					validateStatus: () => true,
+				});
+				const finalUrl = r.request?.res?.responseUrl || rawInput;
+				const mFinal = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || finalUrl.match(/[?&]lat=(-?\d+\.\d+).*?[?&]lng=(-?\d+\.\d+)/);
+				if (mFinal) {
+					lat = parseFloat(mFinal[1]);
+					lng = parseFloat(mFinal[2]);
+				}
+				const htmlStr = typeof r.data === 'string' ? r.data : '';
+				const ofoMatch = htmlStr.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\//i) || rawInput.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\//i);
+				if (ofoMatch && !resolvedName) {
+					resolvedName = decodeURIComponent(ofoMatch[1]).trim();
+				}
+			} catch (e) {}
+
+			if (!lat || !lng) {
+				return res.status(400).json({
+					success: false,
+					error: `Swiggy short link does not expose coordinates publicly${resolvedName ? ` (Recipient: ${resolvedName})` : ''}. Please paste full address text or use "Add Manually on Map"!`,
+				});
+			}
+		}
+
+		// 3. Reverse geocode if we got lat/lng from link, or forward geocode if user pasted plain address text
+		if (lat && lng) {
+			const rev = await reverseGeocodeCoords(lat, lng);
+			if (rev) {
+				resolvedText = rev.display;
+				resolvedArea = rev.area;
+				resolvedCity = rev.city;
+			}
+		} else {
+			const geo = await geocodeAddress([`${rawInput}, India`, rawInput]);
 			if (geo) {
 				lat = geo.lat;
 				lng = geo.lng;
+				resolvedText = geo.display || rawInput;
 			}
 		}
-		const userCity = active.addresses?.[0]?.city || 'Patna';
+
+		const userCity = resolvedCity || active.addresses?.[0]?.city || 'Patna';
+		const displayAddress = resolvedText || rawInput;
 		const newAddress = {
 			id: 'addr_' + Date.now(),
-			name: name || active.userName || 'Delivery User',
+			name: resolvedName || active.userName || 'Delivery User',
 			phone: `+91 ${active.phone}`,
-			address_line1: link.startsWith('http') ? 'Added from Swiggy Link' : link,
-			address_line2: link.startsWith('http') ? link : '',
+			address_line1: displayAddress,
+			address_line2: '',
+			address: displayAddress,
+			area: resolvedArea,
 			city: userCity,
 			lat: lat || active.addresses?.[0]?.lat || 25.6074,
 			lng: lng || active.addresses?.[0]?.lng || 85.1587,
 			tag: 'OTHER',
 			isAccountAddress: true,
 		};
+
 		await AccountRepo.addAddress(active._id, newAddress);
 		await AccountRepo.setSelectedAddress(active._id, newAddress.id);
-		res.json({
-			success: true,
-			message: 'Address added successfully!',
-			address: newAddress
-		});
+		res.json({ success: true, message: 'Address added successfully!', address: newAddress });
 	} catch (err) {
-		res.status(500).json({
-			success: false,
-			error: err.message
-		});
+		res.status(500).json({ success: false, error: err.message });
 	}
 });
 // Add Address Manually

@@ -1,4 +1,37 @@
 const axios = require('axios');
+const http = require('http');
+const https = require('https');
+const tls = require('tls');
+
+function createProxyAgent(proxyUrl) {
+  const p = new URL(proxyUrl);
+  const agent = new https.Agent({ keepAlive: false });
+  agent.createConnection = (options, cb) => {
+    const targetPort = options.port || 443;
+    const headers = { Host: `${options.host}:${targetPort}` };
+    if (p.username || p.password) {
+      headers['Proxy-Authorization'] = 'Basic ' + Buffer.from(`${decodeURIComponent(p.username)}:${decodeURIComponent(p.password)}`).toString('base64');
+    }
+    const req = http.request({
+      host: p.hostname,
+      port: Number(p.port || 80),
+      method: 'CONNECT',
+      path: `${options.host}:${targetPort}`,
+      headers,
+    });
+    req.on('connect', (res, socket) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        return cb(new Error(`Proxy CONNECT failed: ${res.statusCode}`));
+      }
+      const tlsSocket = tls.connect({ socket, servername: options.servername || options.host });
+      cb(null, tlsSocket);
+    });
+    req.on('error', (err) => cb(err));
+    req.end();
+  };
+  return agent;
+}
 
 const BharatPeService = {
   getConfig() {
@@ -7,6 +40,7 @@ const BharatPeService = {
       token: process.env.BHARATPE_TOKEN || '',
       upiId: process.env.BHARATPE_UPI_ID || '',
       merchantName: process.env.BHARATPE_MERCHANT_NAME || 'Toing Pro',
+      proxyUrl: process.env.BHARATPE_PROXY_URL || '',
     };
   },
 
@@ -27,7 +61,7 @@ const BharatPeService = {
   },
 
   async fetchTransactions(days = 2) {
-    const { merchantId, token } = this.getConfig();
+    const { merchantId, token, proxyUrl } = this.getConfig();
     if (!merchantId || !token) {
       return { success: false, error: 'BharatPe merchant credentials not configured', transactions: [] };
     }
@@ -36,7 +70,7 @@ const BharatPeService = {
     const eDate = new Date(now + 86400000).toISOString().slice(0, 10);
 
     try {
-      const response = await axios.get('https://payments-tesseract.bharatpe.in/api/v1/merchant/transactions', {
+      const axiosCfg = {
         params: {
           module: 'PAYMENT_QR',
           merchantId,
@@ -51,7 +85,12 @@ const BharatPeService = {
           'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         },
         timeout: 15000,
-      });
+      };
+      if (proxyUrl) {
+        axiosCfg.httpsAgent = createProxyAgent(proxyUrl);
+        axiosCfg.proxy = false;
+      }
+      const response = await axios.get('https://payments-tesseract.bharatpe.in/api/v1/merchant/transactions', axiosCfg);
 
       const txns = response.data?.data?.transactions || [];
       return {

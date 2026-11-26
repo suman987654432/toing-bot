@@ -3257,6 +3257,11 @@ button svg {
         </div>
       </div>
       <div class="header-actions">
+        <!-- Wallet Balance Pill -->
+        <div class="active-account-pill" id="walletBalancePill" onclick="openWalletModal()" style="background:rgba(16,185,129,0.12); border-color:rgba(16,185,129,0.35); color:#047857; padding:6px 10px !important; cursor:pointer;" title="Bot Wallet Balance">
+          <span>💰</span>
+          <span id="walletBalanceText">₹0</span>
+        </div>
         <!-- Account Switcher Dropdown Button -->
         <div class="active-account-pill has-active" id="activeAccountPill" onclick="toggleAccountDropdown()">
           <svg class="pill-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -4050,6 +4055,6 @@ button svg {
 
   </div>
 
-  <script src="/js/app.js?v=20261126_4"></script>
+  <script src="/js/app.js?v=20261126_5"></script>
 </body>
 </html>
