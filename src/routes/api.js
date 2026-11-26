@@ -15,6 +15,113 @@ const SwiggyService = require('../services/swiggyService');
 const BharatPeService = require('../services/bharatpeService');
 
 const pendingRecharges = new Map();
+const notifiedOrderIds = new Set();
+
+const SMALL_CAPS_MAP = {
+	a: 'ᴀ', b: 'ʙ', c: 'ᴄ', d: 'ᴅ', e: 'ᴇ', f: 'ꜰ', g: 'ɢ', h: 'ʜ', i: 'ɪ',
+	j: 'ᴊ', k: 'ᴋ', l: 'ʟ', m: 'ᴍ', n: 'ɴ', o: 'ᴏ', p: 'ᴘ', q: 'ǫ', r: 'ʀ',
+	s: 'ꜱ', t: 'ᴛ', u: 'ᴜ', v: 'ᴠ', w: 'ᴡ', x: 'x', y: 'ʏ', z: 'ᴢ'
+};
+const toSmallCaps = (str = '') => String(str).toLowerCase().replace(/[a-z]/g, (c) => SMALL_CAPS_MAP[c] || c);
+
+async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, sessionOrder = null, addressDeleted = false) {
+	try {
+		const botToken = process.env.TELEGRAM_BOT_TOKEN;
+		const chatId = String(tgUserId || '').trim();
+		if (!botToken || !/^\d+$/.test(chatId) || !orderId) return;
+		if (notifiedOrderIds.has(String(orderId))) return;
+		notifiedOrderIds.add(String(orderId));
+
+		const tid = activeAccount?.tid || '';
+		const token = activeAccount?.token || '';
+		let liveOrder = null;
+		let trackData = null;
+
+		if (tid || token) {
+			try {
+				const sRes = await SwiggyService.getSingleOrder(orderId, tid, token);
+				liveOrder = sRes.data?.data?.orders?.[0] || sRes.data?.data || null;
+			} catch (e) {}
+			try {
+				const tRes = await SwiggyService.getTrackCard(orderId, tid, token);
+				trackData = tRes.data?.data || tRes.data || null;
+			} catch (e) {}
+		}
+
+		const ord = liveOrder || sessionOrder || { order_id: orderId };
+		const accountPhone = activeAccount?.phone || ord.phone_no || '';
+		const restaurantName = ord.restaurant_name || sessionOrder?.restaurant_name || '';
+		const rawPm = String(ord.payment_method || ord.payment_method_involved || sessionOrder?.payment_method || 'UPI');
+		const payText = /cash|cod/i.test(rawPm) ? 'ᴄᴏᴅ' : (/upi/i.test(rawPm) ? 'ᴜᴘɪ' : toSmallCaps(rawPm));
+		const rawStatus = trackData?.order_status || ord.order_status || 'Order Received!';
+		const statusText = toSmallCaps(rawStatus.replace(/_/g, ' '));
+		const trackUrl = trackData?.tracking_url || trackData?.share_url || ord.tracking_url || `https://www.swiggy.com/track-order/${orderId}`;
+
+		const items = ord.order_items || ord.items || sessionOrder?.items || [];
+		const itemLines = items.map((it) => {
+			const qty = it.quantity || 1;
+			const price = it.sub_total ?? it.item_total ?? it.final_price ?? (it.cost ? Math.round((Number(it.cost) / 100) * 100) / 100 : '');
+			return `• ${it.name} × ${qty}${price !== '' ? ` — ₹${price}` : ''}`;
+		}).join('\n');
+
+		const charges = ord.charges || {};
+		const total = Number(ord.order_total ?? ord.net_total ?? sessionOrder?.order_total ?? 0);
+		const itemTotal = Number(ord.item_total ?? items.reduce((s, it) => s + Number(it.sub_total ?? it.item_total ?? (it.cost ? it.cost / 100 : 0)), 0) ?? total);
+		const deliveryFee = Number(ord.delivery_charges ?? charges['Total Delivery Fees'] ?? charges['Delivery Charges'] ?? 0);
+		const packingFee = Number(charges['Packing Charges'] || 0) + Number(charges['Convenience Fee'] || 0) + Number(charges['Service Charges'] || 0);
+		const taxes = Math.round((Number(ord.order_tax ?? charges['GST'] ?? 0) + packingFee) * 100) / 100;
+		const couponDisc = Number(ord.coupon_discount || 0);
+		const freeCashDisc = Math.max(0, Number(ord.order_discount || 0) + Number(ord.trade_discount || 0) + Number(ord.payment_offer_instant_discount || 0));
+
+		const da = ord.delivery_address;
+		const addrStr = (da && typeof da === 'object')
+			? [da.flat_no, da.landmark, da.address || da.address_line1, da.city].filter(Boolean).join(', ')
+			: (da || sessionOrder?.delivery_address || '');
+		const recName = (da && typeof da === 'object' ? da.name : '') || sessionOrder?.receiver_name || activeAccount?.userName || '';
+		const recPhone = (da && typeof da === 'object' ? da.mobile : '') || sessionOrder?.receiver_phone || accountPhone || '';
+
+		const billLines = [
+			`• ɪᴛᴇᴍ ᴛᴏᴛᴀʟ: ${itemTotal}`,
+			`• ᴅᴇʟɪᴠᴇʀʏ ꜰᴇᴇ: ${deliveryFee === 0 ? 'FREE' : deliveryFee}`,
+		];
+		if (freeCashDisc > 0) billLines.push(`• ꜰʀᴇᴇ ᴄᴀꜱʜ: −${freeCashDisc.toFixed(2)}`);
+		if (couponDisc > 0) billLines.push(`• ᴄᴏᴜᴘᴏɴ ᴅɪꜱᴄᴏᴜɴᴛ: −${couponDisc.toFixed(2)}`);
+		billLines.push(`• ɢᴏᴠᴇʀɴᴍᴇɴᴛ ᴛᴀxᴇꜱ: ${taxes}`);
+		billLines.push(`• ᴛᴏ ᴘᴀʏ: ${total}`);
+
+		const lines = [
+			`✅ ʏᴏᴜʀ ᴏʀᴅᴇʀ ɪꜱ ᴘʟᴀᴄᴇᴅ!`,
+			``,
+			accountPhone ? `📱 ᴀᴄᴄᴏᴜɴᴛ: ${accountPhone}` : null,
+			`🗑 ᴀᴅᴅʀᴇꜱꜱ ᴅᴇʟᴇᴛᴇᴅ: ${addressDeleted ? 'ʏᴇꜱ' : 'ɴᴏ'}`,
+			``,
+			restaurantName ? `🍽 ${toSmallCaps(restaurantName)}` : null,
+			`🆔 ᴏʀᴅᴇʀ ɪᴅ: ${orderId}`,
+			`💳 ᴘᴀʏᴍᴇɴᴛ: ${payText}`,
+			`📍 ꜱᴛᴀᴛᴜꜱ: ${statusText}`,
+			`🔗 ᴛʀᴀᴄᴋɪɴɢ: ${trackUrl}`,
+			itemLines ? `ɪᴛᴇᴍꜱ\n${itemLines}` : null,
+			``,
+			`ʙɪʟʟ ᴅᴇᴛᴀɪʟꜱ`,
+			billLines.join('\n'),
+			``,
+			`📍 ᴅᴇʟɪᴠᴇʀʏ ᴀᴅᴅʀᴇꜱꜱ`,
+			addrStr ? `• ᴀᴅᴅʀᴇꜱꜱ: ${addrStr}` : null,
+			recName ? `• ʀᴇᴄᴇɪᴠᴇʀ: ${recName}` : null,
+			recPhone ? `• ᴘʜᴏɴᴇ: ${recPhone}` : null,
+			``,
+			`#toing`
+		].filter((x) => x !== null);
+
+		await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+			chat_id: chatId,
+			text: lines.join('\n'),
+			disable_web_page_preview: true,
+		}, { timeout: 8000 });
+	} catch (e) {
+		console.error('[Telegram Order Notify] Error:', e.message);
+	}
+}
 // Real geocoding helper for manual/text addresses (OpenStreetMap Nominatim)
 const geocodeAddress = async (queries = []) => {
 	for (const q of queries) {
@@ -1181,6 +1288,8 @@ router.get('/orders', async (req, res) => {
 								order_total: String(placeRes.amount || total || '0'),
 								order_status: 'PAYMENT_PENDING',
 								delivery_address: deliveryAddress,
+								receiver_name: selected.name || active?.userName || '',
+								receiver_phone: selected.mobile || active?.phone || '',
 								order_time: 'Just now',
 								payment_method: upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent'),
 								items: (items || []).map((i) => ({
@@ -1192,6 +1301,11 @@ router.get('/orders', async (req, res) => {
 							};
 
 							getUserPlacedOrders(tgUserId).unshift(newOrder);
+
+							const pmCheck = String(upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent')).toUpperCase();
+							if (pmCheck === 'CASH' || pmCheck === 'COD') {
+								sendOrderPlacedTelegram(tgUserId, newOrder.order_id, active, newOrder, false);
+							}
 
 							res.json({
 								success: true,
@@ -1217,6 +1331,7 @@ router.get('/orders', async (req, res) => {
 								orderId
 							} = req.body;
 							const {
+								active,
 								tid,
 								token,
 								userId
@@ -1225,6 +1340,7 @@ router.get('/orders', async (req, res) => {
 							if (result.success) {
 								const ord = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(orderId));
 								if (ord) ord.order_status = 'CONFIRMED';
+								sendOrderPlacedTelegram(tgUserId, orderId, active, ord || null, false);
 							}
 							res.json(result);
 						} catch (err) {
