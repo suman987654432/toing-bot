@@ -563,13 +563,22 @@ router.post('/search', async (req, res) => {
 			token
 		} = await getActiveCreds(getTgUserId(req));
 		const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
-		// Use Selected Address lat & lng dynamically, fallback to Patna or Varanasi
+		// Use Selected Address lat & lng dynamically; require an address if none selected
 		if (!lat || !lng) {
-			lat = selected?.lat || 25.6074;
-			lng = selected?.lng || 85.1587;
+			lat = selected?.lat;
+			lng = selected?.lng;
+		}
+		if (!lat || !lng) {
+			return res.json({
+				success: false,
+				error: 'Please select a delivery address first.',
+				count: 0,
+				openNowCount: 0,
+				restaurants: [],
+			});
 		}
 		if (!city) {
-			city = selected?.city || 'Patna';
+			city = selected?.city || '';
 		}
 		const searchQuery = query || 'Pizza';
 		const swiggyResult = await SwiggyService.searchRestaurants(searchQuery, lat, lng, tid, token, city);

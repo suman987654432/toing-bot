@@ -732,6 +732,22 @@ function highlightQuery(name, q) {
 let searchAbortController = null;
 
 async function performSearch() {
+  if (!state.selectedAddress || !state.selectedAddress.lat || !state.selectedAddress.lng) {
+    restaurantsCountNum.textContent = '0';
+    openNowText.textContent = '0 open now';
+    searchResults.innerHTML = `
+      <div class="empty-hint" style="padding: 28px 16px;">
+        <div style="font-size: 28px; margin-bottom: 8px;">📍</div>
+        <div style="font-weight: 700; color: var(--text-main); margin-bottom: 6px;">No Delivery Address Selected</div>
+        <div style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px;">Please login and select a delivery address to see nearby restaurants.</div>
+        <button class="btn-primary" style="width:auto; padding: 10px 20px; font-size: 13px;" onclick="switchTab('${state.activeAccount ? 'address' : 'accounts'}')">
+          ${state.activeAccount ? 'Select Address' : 'Login / Add Account'}
+        </button>
+      </div>
+    `;
+    return;
+  }
+
   const query = inputSearchQuery.value.trim() || 'Pizza';
   if (searchAbortController) {
     searchAbortController.abort();
@@ -740,9 +756,9 @@ async function performSearch() {
 
   searchResults.innerHTML = getSkeletonHtml(4, true);
 
-  const lat = state.selectedAddress?.lat || 25.6074;
-  const lng = state.selectedAddress?.lng || 85.1587;
-  const city = state.selectedAddress?.city || 'Patna';
+  const lat = state.selectedAddress.lat;
+  const lng = state.selectedAddress.lng;
+  const city = state.selectedAddress.city || '';
 
   try {
     const res = await fetch('/api/search', {
