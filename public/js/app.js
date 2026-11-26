@@ -116,6 +116,29 @@ function getSkeletonHtml(count = 4, withThumb = true) {
   return html;
 }
 
+// Global Button Loading Spinner Helper
+function setButtonLoading(btnOrId, isLoading, loadingText = null, darkSpinner = false) {
+  const btn = typeof btnOrId === 'string' ? document.getElementById(btnOrId) : btnOrId;
+  if (!btn) return;
+  if (isLoading) {
+    if (!btn.dataset.origHtml) {
+      btn.dataset.origHtml = btn.innerHTML;
+    }
+    btn.disabled = true;
+    btn.classList.add('is-loading');
+    const spinnerClass = darkSpinner ? 'btn-spinner btn-spinner-dark' : 'btn-spinner';
+    const label = loadingText ? `<span>${loadingText}</span>` : '';
+    btn.innerHTML = `<span class="${spinnerClass}"></span>${label}`;
+  } else {
+    btn.disabled = false;
+    btn.classList.remove('is-loading');
+    if (btn.dataset.origHtml) {
+      btn.innerHTML = btn.dataset.origHtml;
+      delete btn.dataset.origHtml;
+    }
+  }
+}
+
 // Toast notification helper
 function showToast(message, isError = false) {
   toastEl.textContent = message;
@@ -394,9 +417,7 @@ async function handleOtpAction() {
     const pendingTid = state.pendingTid || sessionStorage.getItem('toing_pending_tid') || '';
 
     const btn = document.getElementById('btnSendOtp');
-    const btnText = document.getElementById('btnSendOtpText');
-    if (btn) btn.disabled = true;
-    if (btnText) btnText.textContent = 'Verifying...';
+    setButtonLoading(btn, true, 'Verifying...');
 
     try {
       const res = await fetch('/api/accounts/verify-otp', {
@@ -415,16 +436,15 @@ async function handleOtpAction() {
     } catch (e) {
       showToast('Network error while verifying OTP', true);
     } finally {
-      if (btn) btn.disabled = false;
+      setButtonLoading(btn, false);
+      const btnText = document.getElementById('btnSendOtpText');
       if (btnText && state.otpSent) btnText.textContent = 'Verify OTP';
     }
     return;
   }
 
   const btn = document.getElementById('btnSendOtp');
-  const btnText = document.getElementById('btnSendOtpText');
-  if (btn) btn.disabled = true;
-  if (btnText) btnText.textContent = 'Sending...';
+  setButtonLoading(btn, true, 'Sending...');
 
   try {
     const res = await fetch('/api/accounts/send-otp', {
@@ -441,7 +461,6 @@ async function handleOtpAction() {
       sessionStorage.setItem('toing_pending_tid', data.tid || '');
 
       document.getElementById('otpInputGroup').classList.remove('hidden');
-      if (btnText) btnText.textContent = 'Verify OTP';
       const otpInput = document.getElementById('inputOtp');
       if (otpInput) {
         otpInput.value = '';
@@ -454,8 +473,9 @@ async function handleOtpAction() {
   } catch (e) {
     showToast('Failed to reach server', true);
   } finally {
-    if (btn) btn.disabled = false;
-    if (btnText && !state.otpSent) btnText.textContent = 'Send OTP';
+    setButtonLoading(btn, false);
+    const btnText = document.getElementById('btnSendOtpText');
+    if (btnText) btnText.textContent = state.otpSent ? 'Verify OTP' : 'Send OTP';
   }
 }
 
@@ -481,6 +501,7 @@ async function handleImportJson() {
     showToast('Please paste valid JSON data', true);
     return;
   }
+  setButtonLoading('btnImportJson', true, 'Importing...');
   try {
     const res = await fetch('/api/accounts/import-json', {
       method: 'POST',
@@ -498,6 +519,8 @@ async function handleImportJson() {
     }
   } catch (e) {
     showToast('Invalid JSON format', true);
+  } finally {
+    setButtonLoading('btnImportJson', false);
   }
 }
 
@@ -733,6 +756,7 @@ async function submitAddLink() {
     showToast('Please paste a Swiggy link or address text', true);
     return;
   }
+  setButtonLoading('btnSubmitAddLink', true, 'Adding...');
   try {
     const res = await fetch('/api/addresses/add-link', {
       method: 'POST',
@@ -752,6 +776,8 @@ async function submitAddLink() {
     }
   } catch (e) {
     showToast('Error saving address', true);
+  } finally {
+    setButtonLoading('btnSubmitAddLink', false);
   }
 }
 
@@ -768,6 +794,7 @@ async function submitAddManual() {
     return;
   }
 
+  setButtonLoading('btnSaveManualAddr', true, 'Saving...');
   try {
     const isEdit = Boolean(state.editingAddressId);
     const url = isEdit ? `/api/addresses/${encodeURIComponent(state.editingAddressId)}` : '/api/addresses/add-manual';
@@ -789,6 +816,8 @@ async function submitAddManual() {
     }
   } catch (e) {
     showToast('Error saving address', true);
+  } finally {
+    setButtonLoading('btnSaveManualAddr', false);
   }
 }
 
@@ -1806,6 +1835,7 @@ async function handleApplyCoupon() {
     return;
   }
 
+  setButtonLoading('btnApplyCoupon', true);
   try {
     const res = await fetch('/api/coupons/apply', {
       method: 'POST',
@@ -1823,6 +1853,8 @@ async function handleApplyCoupon() {
     }
   } catch (err) {
     showToast('Failed to apply coupon', true);
+  } finally {
+    setButtonLoading('btnApplyCoupon', false);
   }
 }
 
@@ -1844,14 +1876,8 @@ async function handlePlaceOrder() {
 
   const btn = document.getElementById('btnPlaceOrder');
   const stickyBtn = document.getElementById('btnStickyPayOrder');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Placing Order on Swiggy Payments... 🚀';
-  }
-  if (stickyBtn) {
-    stickyBtn.disabled = true;
-    stickyBtn.textContent = 'Processing... 🚀';
-  }
+  if (btn) setButtonLoading(btn, true, 'Placing Order...');
+  if (stickyBtn) setButtonLoading(stickyBtn, true, 'Processing...');
 
   const itemTotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const deliveryFee = state.cart.liveBill ? Number(state.cart.liveBill.deliveryFee || 0) : 0;
@@ -1911,11 +1937,11 @@ async function handlePlaceOrder() {
     showToast('Network error while initiating payment', true);
   } finally {
     if (btn) {
-      btn.disabled = false;
+      setButtonLoading(btn, false);
       btn.innerHTML = `<span>🛍️ BUY NOW / PLACE ORDER</span> <span id="checkoutTotalText">₹${total}</span>`;
     }
     if (stickyBtn) {
-      stickyBtn.disabled = false;
+      setButtonLoading(stickyBtn, false);
       updateWalletUi();
     }
   }
@@ -2004,10 +2030,7 @@ async function saveAdminFeeSettings() {
     return;
   }
   const btn = document.getElementById('btnSaveAdminSettings');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-  }
+  setButtonLoading(btn, true, 'Saving...');
   try {
     const res = await fetch('/api/admin/settings', {
       method: 'POST',
@@ -2026,10 +2049,7 @@ async function saveAdminFeeSettings() {
   } catch (e) {
     showToast('Network error saving settings', true);
   } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = 'Save Settings';
-    }
+    setButtonLoading(btn, false);
   }
 }
 
@@ -2087,10 +2107,7 @@ async function initBharatPeRecharge() {
     return;
   }
   const btn = document.getElementById('btnInitBharatPe');
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Generating QR...';
-  }
+  setButtonLoading(btn, true, 'Generating QR...');
   try {
     const res = await fetch('/api/wallet/recharge/init', {
       method: 'POST',
@@ -2130,15 +2147,13 @@ async function initBharatPeRecharge() {
   } catch (e) {
     showToast('Network error generating QR', true);
   } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = 'Generate BharatPe QR';
-    }
+    setButtonLoading(btn, false);
   }
 }
 
 async function verifyBharatPeRecharge(isAuto = false) {
   const utr = (document.getElementById('inputManualUtr')?.value || '').trim();
+  if (!isAuto) setButtonLoading('btnVerifyBharatPe', true, 'Verifying...');
   try {
     const res = await fetch('/api/wallet/recharge/verify', {
       method: 'POST',
@@ -2165,6 +2180,8 @@ async function verifyBharatPeRecharge(isAuto = false) {
     }
   } catch (e) {
     if (!isAuto) showToast('Error verifying payment', true);
+  } finally {
+    if (!isAuto) setButtonLoading('btnVerifyBharatPe', false);
   }
 }
 
@@ -2370,6 +2387,7 @@ async function fetchOrders() {
   closeOrderDetails();
   const container = document.getElementById('ordersList');
   container.innerHTML = getSkeletonHtml(3, false);
+  setButtonLoading('btnRefreshOrders', true, 'Refreshing...', true);
 
   try {
     const res = await fetch('/api/orders');
@@ -2401,6 +2419,8 @@ async function fetchOrders() {
     container.innerHTML = html;
   } catch (e) {
     container.innerHTML = '<div class="empty-hint">Failed to load orders from Swiggy.</div>';
+  } finally {
+    setButtonLoading('btnRefreshOrders', false);
   }
 }
 
@@ -2589,8 +2609,7 @@ function openBulkClaimModal() {
 async function executeBulkClaim() {
   const code = (document.getElementById('inputBulkReferCode').value || '5G9P5Q').trim();
   const btn = document.getElementById('btnExecuteBulkClaim');
-  btn.disabled = true;
-  btn.textContent = 'Claiming ₹50 for all accounts... 🚀';
+  setButtonLoading(btn, true, 'Claiming ₹50...');
 
   try {
     const res = await fetch('/api/tools/bulk-claim', {
@@ -2609,8 +2628,7 @@ async function executeBulkClaim() {
   } catch (e) {
     showToast('Network error during bulk claim', true);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Claim ₹50 for All Accounts';
+    setButtonLoading(btn, false);
   }
 }
 
@@ -2630,8 +2648,7 @@ function openBulkOrderModal() {
 
 async function executeBulkOrder() {
   const btn = document.getElementById('btnExecuteBulkOrder');
-  btn.disabled = true;
-  btn.textContent = 'Placing bulk orders... 🚀';
+  setButtonLoading(btn, true, 'Placing Orders...');
 
   try {
     const res = await fetch('/api/tools/bulk-order', {
@@ -2654,8 +2671,7 @@ async function executeBulkOrder() {
   } catch (e) {
     showToast('Network error during bulk order', true);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Place Orders Simultaneously 🚀';
+    setButtonLoading(btn, false);
   }
 }
 

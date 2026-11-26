@@ -77,7 +77,7 @@ body {
 .brand-logo {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  background: #4f46e5;
   border-radius: 12px;
   color: #ffffff;
   display: flex;
@@ -805,7 +805,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  background: #4f46e5;
   box-shadow: 0 4px 14px rgba(79, 70, 229, 0.25);
   color: #ffffff;
   border: none;
