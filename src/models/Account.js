@@ -255,7 +255,7 @@ const AccountRepo = {
       const acc = await MongooseAccountModel.findById(accountId);
       if (acc) {
         acc.addresses = acc.addresses.map((addr) =>
-          (addr.id || addr._id) === addressId ? { ...addr, ...updatedFields } : addr
+          String(addr.id || addr._id) === String(addressId) ? { ...addr, ...updatedFields } : addr
         );
         acc.markModified('addresses');
         await acc.save();
@@ -279,8 +279,8 @@ const AccountRepo = {
     if (mongoose.connection.readyState === 1) {
       const acc = await MongooseAccountModel.findById(accountId);
       if (acc) {
-        acc.addresses = acc.addresses.filter((addr) => (addr.id || addr._id) !== addressId);
-        if (acc.selectedAddressId === addressId) {
+        acc.addresses = acc.addresses.filter((addr) => String(addr.id || addr._id) !== String(addressId));
+        if (String(acc.selectedAddressId) === String(addressId)) {
           acc.selectedAddressId = acc.addresses[0]?.id || '';
         }
         await acc.save();

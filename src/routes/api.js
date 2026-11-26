@@ -473,7 +473,7 @@ router.get('/addresses', async (req, res) => {
 				}
 			} catch (err) {}
 		}
-		// Default fallback address if account has none
+		// Default fallback address if account has none (persist to DB so Edit/Select works)
 		if (addresses.length === 0) {
 			addresses = [{
 				id: 'addr_varanasi_dlw',
@@ -486,7 +486,10 @@ router.get('/addresses', async (req, res) => {
 				lng: 82.9639115,
 				tag: 'HOME',
 				isAccountAddress: true,
-			}, ];
+			}];
+			active.addresses = addresses;
+			if (!active.selectedAddressId) active.selectedAddressId = 'addr_varanasi_dlw';
+			await AccountRepo.saveOrUpdate(active).catch(() => {});
 		}
 		res.json({
 			success: true,
@@ -714,22 +717,21 @@ router.put('/addresses/:id', async (req, res) => {
 		if (!active) {
 			return res.status(400).json({ success: false, error: 'No active account' });
 		}
-		const existing = (active.addresses || []).find((a) => (a.id || a._id) === req.params.id);
-		if (!existing) {
-			return res.status(404).json({ success: false, error: 'Address not found' });
-		}
+		const existing = (active.addresses || []).find((a) => String(a.id || a._id) === String(req.params.id));
+		const base = existing || {};
 
-		const targetCity = city || existing.city || 'Patna';
+		const targetCity = city || base.city || 'Patna';
 		const updatedFields = {
-			name: name || existing.name || active.userName || 'Delivery User',
-			phone: phone || existing.phone || existing.mobile || `+91 ${active.phone}`,
-			mobile: phone || existing.mobile || existing.phone || active.phone,
-			address_line1: addressLine1 !== undefined ? addressLine1 : (existing.address_line1 || existing.flat_no || ''),
-			address_line2: addressLine2 !== undefined ? addressLine2 : (existing.address_line2 || existing.landmark || ''),
-			flat_no: addressLine1 !== undefined ? addressLine1 : (existing.flat_no || ''),
-			landmark: addressLine2 !== undefined ? addressLine2 : (existing.landmark || ''),
+			id: String(req.params.id || base.id || ('addr_' + Date.now())),
+			name: name || base.name || active.userName || 'Delivery User',
+			phone: phone || base.phone || base.mobile || `+91 ${active.phone}`,
+			mobile: phone || base.mobile || base.phone || active.phone,
+			address_line1: addressLine1 !== undefined ? addressLine1 : (base.address_line1 || base.flat_no || ''),
+			address_line2: addressLine2 !== undefined ? addressLine2 : (base.address_line2 || base.landmark || ''),
+			flat_no: addressLine1 !== undefined ? addressLine1 : (base.flat_no || ''),
+			landmark: addressLine2 !== undefined ? addressLine2 : (base.landmark || ''),
 			city: targetCity,
-			tag: tag || existing.tag || 'OTHER',
+			tag: tag || base.tag || 'HOME',
 		};
 
 		const geo = await geocodeAddress([
@@ -743,8 +745,12 @@ router.put('/addresses/:id', async (req, res) => {
 			updatedFields.lng = geo.lng;
 		}
 
-		await AccountRepo.updateAddress(active._id, req.params.id, updatedFields);
-		res.json({ success: true, message: 'Address updated successfully!', address: { ...existing, ...updatedFields } });
+		if (existing) {
+			await AccountRepo.updateAddress(active._id, req.params.id, updatedFields);
+		} else {
+			await AccountRepo.addAddress(active._id, updatedFields);
+		}
+		res.json({ success: true, message: 'Address updated successfully!', address: { ...base, ...updatedFields } });
 	} catch (err) {
 		res.status(500).json({ success: false, error: err.message });
 	}
@@ -917,7 +923,8 @@ router.post('/cart/update', async (req, res) => {
 			const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0] || {};
 			const lat = Number(req.body.lat || selected.lat || 25.6074);
 			const lng = Number(req.body.lng || selected.lng || 85.1587);
-			const addressId = String(req.body.addressId || selected.id || active?.selectedAddressId || '');
+			const rawAddrId = String(req.body.addressId || selected.id || active?.selectedAddressId || '');
+			const addressId = rawAddrId.startsWith('addr_') ? '' : rawAddrId;
 			cartPayload = {
 				address_nudge_check: false,
 				batch_opt_in: false,
@@ -939,15 +946,18 @@ router.post('/cart/update', async (req, res) => {
 		const result = await SwiggyService.updateCart(cartPayload, tid, token, userId);
 		const d = result.data?.data || {};
 		const deliveryRow = (d.rendering_details || []).find(
-			(r) => /delivery/i.test(String(r.key || '')) || /delivery fee/i.test(String(r.display_text || ''))
+			(r) =>
+				/delivery fee/i.test(String(r.display_text || '')) ||
+				['delivery_charges', 'free_non_super_delivery_exclusive', 'delivery_fee'].includes(String(r.key || ''))
 		);
+		const rawDelivLabel = String(deliveryRow?.display_text || '').replace(/^"+|"+$/g, '').trim();
 		const itemTotalRow = (d.rendering_details || []).find((r) => r.key === 'item_total');
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined)
 			? {
 				itemTotal: Number(d.cart_subtotal ?? d.item_total ?? 0),
 				strikeOffItemTotal: itemTotalRow?.intermediateText || '',
 				deliveryFee: Number(d.delivery_charges ?? 0),
-				deliveryLabel: deliveryRow?.display_text || '',
+				deliveryLabel: rawDelivLabel,
 				deliveryStrikeOff: deliveryRow?.intermediateText || '',
 				taxes: Number(d.total_tax ?? d.taxes?.GST ?? 0),
 				packingCharges: Number(d.total_packing_charges ?? 0),

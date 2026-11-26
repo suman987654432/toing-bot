@@ -1650,6 +1650,9 @@ function syncCartBillWithApi(items, rawItemTotal) {
           restaurantId: state.cart.restaurantId,
           items,
           cookingRequest: state.cart.cookingRequest || '',
+          lat: state.selectedAddress?.lat,
+          lng: state.selectedAddress?.lng,
+          addressId: state.selectedAddressId,
         }),
       });
       const data = await res.json();
