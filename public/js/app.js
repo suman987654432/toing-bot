@@ -56,8 +56,10 @@ const state = {
     cookingRequest: '',
     couponCode: '',
     discount: 0,
-    fcClaimed: false,
+    fcClaimed: true,
+    fcManuallyToggled: false,
     paymentMethod: 'UPIIntent',
+    liveBill: null,
   },
   currentMenu: null,
 };
@@ -1382,7 +1384,8 @@ function updateCartQty(itemId, delta) {
     state.cart.couponCode = '';
     state.cart.discount = 0;
     state.cart.cookingRequest = '';
-    state.cart.fcClaimed = false;
+    state.cart.fcClaimed = true;
+    state.cart.fcManuallyToggled = false;
   }
 
   renderMenuItems();
@@ -1420,7 +1423,8 @@ function clearCart() {
   state.cart.couponCode = '';
   state.cart.discount = 0;
   state.cart.cookingRequest = '';
-  state.cart.fcClaimed = false;
+  state.cart.fcClaimed = true;
+  state.cart.fcManuallyToggled = false;
   showToast('Cart cleared');
   renderMenuItems();
   updateFloatingCartBar();
@@ -1537,11 +1541,21 @@ function updateCartView() {
     }
   }
 
-  // Bill Calculations (1:1 with Screenshot)
+  // Bill Calculations (live Swiggy /api/cart/update values with fallback)
+  renderCartBill(rawItemTotal);
+  syncCartBillWithApi(items, rawItemTotal);
+  fetchCoupons();
+}
+
+let cartBillSyncTimer = null;
+let cartBillSyncKey = '';
+
+function renderCartBill(rawItemTotal) {
+  const live = state.cart.liveBill;
   const origItemTotal = (rawItemTotal * 1.25).toFixed(2);
   const deliveryDistance = state.cart.restaurantDistance || '2.1 kms';
-  const deliveryFee = 25;
-  const taxes = 5.2;
+  const deliveryFee = live ? Number(live.deliveryFee || 0) : 25;
+  const taxes = live ? Number(live.taxes || 0) : 5.2;
 
   let couponDiscount = state.cart.discount || 0;
   if (state.cart.couponCode) {
@@ -1563,8 +1577,18 @@ function updateCartView() {
   document.getElementById('billItemTotal').textContent = `₹${rawItemTotal.toFixed(2)}`;
 
   const delivLabel = document.getElementById('billDeliveryLabel');
-  if (delivLabel) delivLabel.textContent = `Delivery Fee ${deliveryDistance}`;
-  document.getElementById('billDeliveryFee').textContent = `₹${deliveryFee}`;
+  if (delivLabel) {
+    delivLabel.textContent = (live && live.deliveryLabel) ? live.deliveryLabel : `Delivery Fee ${deliveryDistance}`;
+  }
+  const delivFeeEl = document.getElementById('billDeliveryFee');
+  if (delivFeeEl) {
+    if (live && deliveryFee === 0) {
+      const strike = live.deliveryStrikeOff ? `<span style="text-decoration:line-through; color:var(--text-muted); margin-right:4px;">₹${live.deliveryStrikeOff}</span>` : '';
+      delivFeeEl.innerHTML = `${strike}<span style="color:#16a34a; font-weight:700;">FREE</span>`;
+    } else {
+      delivFeeEl.textContent = `₹${deliveryFee}`;
+    }
+  }
   document.getElementById('billTaxes').textContent = `₹${taxes}`;
 
   // Coupon discount row
@@ -1590,13 +1614,45 @@ function updateCartView() {
   }
 
   document.getElementById('billGrandTotal').textContent = `₹${toPay}`;
-  
+
   // Sticky pay bar elements
   const stickyAmt = document.getElementById('stickyPayAmount');
   if (stickyAmt) stickyAmt.textContent = `₹${toPay}`;
   updateWalletUi();
+}
 
-  fetchCoupons();
+function syncCartBillWithApi(items, rawItemTotal) {
+  if (!state.activeAccount || !items || items.length === 0) {
+    state.cart.liveBill = null;
+    return;
+  }
+  const key = JSON.stringify({
+    r: state.cart.restaurantId,
+    a: state.selectedAddressId,
+    i: items.map((x) => `${x.id}:${x.quantity}:${x.price}`),
+  });
+  if (key === cartBillSyncKey && state.cart.liveBill) return;
+
+  if (cartBillSyncTimer) clearTimeout(cartBillSyncTimer);
+  cartBillSyncTimer = setTimeout(async () => {
+    try {
+      const res = await fetch('/api/cart/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantId: state.cart.restaurantId,
+          items,
+          cookingRequest: state.cart.cookingRequest || '',
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.bill) {
+        cartBillSyncKey = key;
+        state.cart.liveBill = data.bill;
+        renderCartBill(rawItemTotal);
+      }
+    } catch (e) {}
+  }, 250);
 }
 
 function openCookingRequestPrompt() {
@@ -1622,6 +1678,7 @@ function toggleCouponSection() {
 }
 
 function claimFoodCoinDiscount() {
+  state.cart.fcManuallyToggled = true;
   state.cart.fcClaimed = !state.cart.fcClaimed;
   if (state.cart.fcClaimed) {
     showToast('⚡ ₹50 Food Coins claimed!');
@@ -1787,8 +1844,8 @@ async function handlePlaceOrder() {
   }
 
   const itemTotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const deliveryFee = 25;
-  const taxes = 5.2;
+  const deliveryFee = state.cart.liveBill ? Number(state.cart.liveBill.deliveryFee || 0) : 25;
+  const taxes = state.cart.liveBill ? Number(state.cart.liveBill.taxes || 0) : 5.2;
   const fcDiscount = state.cart.fcClaimed ? 50 : 0;
   const total = Math.max(0, Math.round(itemTotal + deliveryFee + taxes - (state.cart.discount || 0) - fcDiscount));
   const payMethod = state.cart.paymentMethod || 'UPIIntent';
@@ -1826,6 +1883,7 @@ async function handlePlaceOrder() {
         clearCartAfterOrder();
         switchTab('orders');
         fetchOrders();
+        openOrderDetails(data.order_id);
       } else {
         openPaymentFlowModal({
           orderId: data.order_id,
@@ -2113,7 +2171,9 @@ function clearCartAfterOrder() {
   state.cart.couponCode = '';
   state.cart.discount = 0;
   state.cart.cookingRequest = '';
-  state.cart.fcClaimed = false;
+  state.cart.fcClaimed = true;
+  state.cart.fcManuallyToggled = false;
+  state.cart.liveBill = null;
   state.ordersCache = null;
   updateFloatingCartBar();
   updateCartView();
@@ -2241,6 +2301,7 @@ async function checkAndConfirmPayment(orderId, paasId, paymentCode = 'UPIIntent'
         closeModal('modalPaymentFlow');
         switchTab('orders');
         fetchOrders();
+        openOrderDetails(orderId);
         return;
       } else if (st === 'failed' || st === 'failure') {
         if (paymentPollTimer) {
@@ -2270,6 +2331,7 @@ async function checkAndConfirmPayment(orderId, paasId, paymentCode = 'UPIIntent'
         closeModal('modalPaymentFlow');
         switchTab('orders');
         fetchOrders();
+        openOrderDetails(orderId);
       } else {
         showToast(cfData.error || 'Payment not confirmed yet', true);
       }
@@ -2282,7 +2344,20 @@ async function checkAndConfirmPayment(orderId, paasId, paymentCode = 'UPIIntent'
 // ==========================================
 // 5. ORDERS
 // ==========================================
+function copyPlainText(text, msg = 'Copied!') {
+  if (!text) return;
+  navigator.clipboard?.writeText(String(text)).then(() => showToast(msg)).catch(() => showToast('Copy failed', true));
+}
+
+function closeOrderDetails() {
+  const listCard = document.getElementById('ordersListCard');
+  const detailView = document.getElementById('orderDetailView');
+  if (detailView) detailView.classList.add('hidden');
+  if (listCard) listCard.classList.remove('hidden');
+}
+
 async function fetchOrders() {
+  closeOrderDetails();
   const container = document.getElementById('ordersList');
   container.innerHTML = getSkeletonHtml(3, false);
 
@@ -2320,14 +2395,19 @@ async function fetchOrders() {
 }
 
 async function openOrderDetails(orderId) {
-  const modal = document.getElementById('modalOrderDetail');
-  const title = document.getElementById('orderModalTitle');
-  const body = document.getElementById('orderModalBody');
-  if (!modal || !body) return;
+  const listCard = document.getElementById('ordersListCard');
+  const detailView = document.getElementById('orderDetailView');
+  if (!detailView) return;
 
-  if (title) title.textContent = `Order #${orderId}`;
-  body.innerHTML = '<div class="skeleton-spinner-row"><div class="mini-spinner"></div><span>Loading live order status...</span></div>';
-  modal.classList.remove('hidden');
+  if (listCard) listCard.classList.add('hidden');
+  detailView.classList.remove('hidden');
+  detailView.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <button type="button" class="btn-secondary btn-sm" onclick="closeOrderDetails()" style="border-radius:999px; padding:7px 14px; font-weight:700;">← Back to Orders</button>
+      <button type="button" class="btn-secondary btn-sm" onclick="openOrderDetails('${orderId}')" style="border-radius:999px; padding:7px 14px; font-weight:700;">🔄 Refresh</button>
+    </div>
+    <div class="card"><div class="skeleton-spinner-row"><div class="mini-spinner"></div><span>Loading live order status...</span></div></div>
+  `;
 
   const cached = (state.ordersCache || []).find((o) => String(o.order_id) === String(orderId));
 
@@ -2338,66 +2418,143 @@ async function openOrderDetails(orderId) {
     const track = data.trackData?.data || data.trackData || {};
 
     const status = (track.order_status || ord.order_status || cached?.order_status || 'PREPARING').toUpperCase();
-    const restName = ord.restaurant_name || cached?.restaurant_name || 'Restaurant';
-    const restLocality = ord.restaurant_locality || '';
-    const orderTime = ord.order_time || cached?.order_time || '';
+    const orderTime = ord.order_time || cached?.order_time || 'Just now';
     const total = Number(ord.order_total ?? ord.net_total ?? cached?.order_total ?? 0);
     const items = ord.order_items || ord.items || cached?.items || [];
     const statusMsg = track.message || track.statusMessage || data.trackData?.statusMessage || '';
 
-    // Extract full Bill Details from Swiggy getSingleOrder response
+    // Delivery Partner details
+    const dp = ord.delivery_boy || track.delivery_boy || track.de_details || {};
+    const dpName = dp.name || '';
+    const dpPhone = dp.mobile || dp.phone || '';
+    const dpText = dpName ? `${dpName}${dpPhone ? ' | ' + dpPhone : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
+
+    // Tracking link
+    const trackUrl = `https://www.swiggy.com/track-order/${orderId}`;
+
+    // Extract full Bill Details
     const charges = ord.charges || {};
     const itemTotal = Number(ord.item_total || items.reduce((s, it) => s + Number(it.sub_total || it.item_total || (it.cost ? it.cost / 100 : 0)), 0) || total);
     const deliveryFee = Number(ord.delivery_charges ?? charges['Total Delivery Fees'] ?? charges['Delivery Charges'] ?? 0);
     const packingFee = Number(charges['Packing Charges'] || 0) + Number(charges['Convenience Fee'] || 0) + Number(charges['Service Charges'] || 0);
-    const taxes = Number(ord.order_tax ?? charges['GST'] ?? 0);
-    const totalDiscount = Math.max(0, Number(ord.order_discount || 0) + Number(ord.coupon_discount || 0) + Number(ord.trade_discount || 0) + Number(ord.payment_offer_instant_discount || 0));
-    const computedDiffDiscount = (!totalDiscount && itemTotal + deliveryFee + packingFee + taxes > total)
-      ? Math.round((itemTotal + deliveryFee + packingFee + taxes - total) * 100) / 100
-      : totalDiscount;
-    const payMethod = ord.payment_method || ord.payment_method_involved || cached?.payment_method || 'UPI / Online';
+    const taxes = Math.round((Number(ord.order_tax ?? charges['GST'] ?? 0) + packingFee) * 100) / 100;
+    const couponDisc = Number(ord.coupon_discount || 0);
+    const otherDisc = Math.max(0, Number(ord.order_discount || 0) + Number(ord.trade_discount || 0) + Number(ord.payment_offer_instant_discount || 0));
+    const computedDiff = Math.max(0, Math.round((itemTotal + deliveryFee + taxes - couponDisc - otherDisc - total) * 100) / 100);
+    const freeCashDisc = otherDisc > 0 ? otherDisc : (couponDisc === 0 && computedDiff > 0 ? computedDiff : 0);
+    const finalCouponDisc = couponDisc > 0 ? couponDisc : (freeCashDisc === 0 && computedDiff > 0 ? computedDiff : 0);
 
-    // Full Delivery Address
+    const rawPm = String(ord.payment_method || ord.payment_method_involved || cached?.payment_method || 'UPI');
+    const payLabel = /cash|cod/i.test(rawPm) ? 'COD' : (/upi/i.test(rawPm) ? 'UPI' : rawPm.toUpperCase());
+
+    // Delivery Address & Receiver Contact
     const da = ord.delivery_address;
-    const addrLine = (da && typeof da === 'object')
-      ? [da.name ? `${da.name}${da.mobile ? ' | +91 ' + da.mobile : ''}` : '', [da.flat_no, da.landmark, da.address || da.address_line1].filter(Boolean).join(', ')].filter(Boolean).join('<br>')
+    const recName = (da && typeof da === 'object' ? da.name : '') || state.selectedAddress?.name || state.activeAccount?.userName || 'Customer';
+    const recPhone = (da && typeof da === 'object' ? da.mobile : '') || state.selectedAddress?.mobile || state.activeAccount?.phone || '';
+    const addrText = (da && typeof da === 'object')
+      ? [da.flat_no, da.landmark, da.address || da.address_line1, da.city].filter(Boolean).join(', ')
       : (da || cached?.delivery_address || 'Delivery Address');
 
-    body.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
-        <div>
-          <div style="font-weight:800; font-size:15px;">${restName}</div>
-          ${restLocality || orderTime ? `<div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">${[restLocality, orderTime].filter(Boolean).join(' • ')}</div>` : ''}
-        </div>
-        <span class="badge-tag tag-account">${status}</span>
+    detailView.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeOrderDetails()" style="border-radius:999px; padding:7px 14px; font-weight:700;">← Back to Orders</button>
+        <button type="button" class="btn-secondary btn-sm" onclick="openOrderDetails('${orderId}')" style="border-radius:999px; padding:7px 14px; font-weight:700;">🔄 Refresh</button>
       </div>
-      ${statusMsg ? `<div style="background:rgba(99,102,241,0.1); color:var(--primary); padding:8px 10px; border-radius:8px; font-weight:600; margin-bottom:10px;">🛵 ${statusMsg}</div>` : ''}
 
-      <div style="border-top:1px solid var(--border-color); padding-top:8px; margin-bottom:10px;">
-        <div style="font-weight:700; margin-bottom:5px; color:var(--text-muted); font-size:11px; letter-spacing:0.5px;">ITEMS ORDERED</div>
+      <!-- Card 1: Order & Tracking -->
+      <div class="card" style="padding:14px 16px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;">
+          <span style="color:var(--text-muted); font-weight:600;">Order ID</span>
+          <span style="display:flex; align-items:center; gap:6px; font-weight:700;">
+            #${orderId}
+            <button type="button" onclick="copyPlainText('${orderId}', 'Order ID copied!')" style="border:1px solid var(--border-color); background:var(--input-bg); border-radius:6px; padding:2px 6px; cursor:pointer; font-size:11px;">📋</button>
+          </span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;">
+          <span style="color:var(--text-muted); font-weight:600;">Paid Via</span>
+          <span style="background:rgba(16,185,129,0.14); color:#047857; padding:3px 10px; border-radius:999px; font-weight:800; font-size:11.5px;">${payLabel}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;">
+          <span style="color:var(--text-muted); font-weight:600;">Placed On</span>
+          <span style="font-weight:700;">${orderTime}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;">
+          <span style="color:var(--text-muted); font-weight:600;">Tracking</span>
+          <span style="display:flex; align-items:center; gap:6px;">
+            <a href="${trackUrl}" target="_blank" rel="noopener" style="background:rgba(249,115,22,0.12); color:#ea580c; padding:4px 11px; border-radius:999px; font-weight:700; font-size:12px; text-decoration:none;">🎯 Track order</a>
+            <button type="button" onclick="copyPlainText('${trackUrl}', 'Tracking link copied!')" style="border:1px solid var(--border-color); background:var(--input-bg); border-radius:6px; padding:2px 6px; cursor:pointer; font-size:11px;">📋</button>
+          </span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;">
+          <span style="color:var(--text-muted); font-weight:600;">Delivery Partner</span>
+          <span style="font-weight:700; text-align:right;">${dpText}</span>
+        </div>
+        ${statusMsg ? `<div style="margin-top:8px; background:rgba(99,102,241,0.1); color:var(--primary); padding:8px 10px; border-radius:8px; font-size:12px; font-weight:600;">🛵 ${statusMsg}</div>` : ''}
+      </div>
+
+      <!-- Card 2: Delivery Address -->
+      <div class="card" style="padding:14px 16px; margin-bottom:12px;">
+        <div style="font-weight:800; font-size:14px; margin-bottom:10px;">📍 Delivery Address</div>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:8px; font-size:13px;">
+          <span style="color:var(--text-muted); font-weight:600; white-space:nowrap;">Deliver To:</span>
+          <span style="font-weight:700; text-align:right; line-height:1.4;">${addrText}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:13px;">
+          <span style="color:var(--text-muted); font-weight:600; white-space:nowrap;">Receiver Contact:</span>
+          <span style="font-weight:700; text-align:right;">${recName}${recPhone ? ' | ' + recPhone : ''}</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Ordered Items Summary -->
+      <div class="card" style="padding:14px 16px; margin-bottom:12px;">
+        <div style="font-weight:800; font-size:14px; margin-bottom:10px;">🧺 Ordered Items Summary</div>
         ${items.length ? items.map((it) => {
           const itPrice = it.sub_total || it.item_total || it.final_price || (it.cost ? Math.round(it.cost / 100) : '');
-          return `<div style="display:flex; justify-content:space-between; margin:4px 0; font-weight:600;"><span>${it.name} × ${it.quantity || 1}</span><span>${itPrice !== '' ? '₹' + itPrice : ''}</span></div>`;
-        }).join('') : '<div style="color:var(--text-muted);">No item breakdown available</div>'}
+          const isVeg = it.is_veg !== 0 && it.is_veg !== false;
+          const variant = it.variants?.[0]?.name || it.sub_title || '';
+          return `
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border-color);">
+              <div style="display:flex; align-items:flex-start; gap:8px; flex:1; min-width:0;">
+                <span style="width:14px; height:14px; border:1.5px solid ${isVeg ? '#16a34a' : '#dc2626'}; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:2px;">
+                  <span style="width:6px; height:6px; border-radius:50%; background:${isVeg ? '#16a34a' : '#dc2626'};"></span>
+                </span>
+                <div>
+                  <div style="font-weight:700; font-size:13.5px;">${it.name}</div>
+                  ${variant ? `<div style="font-size:11.5px; color:var(--text-muted);">${variant}</div>` : ''}
+                </div>
+              </div>
+              <div style="display:flex; align-items:center; gap:14px; flex-shrink:0; font-size:13px;">
+                <span style="color:var(--text-muted); font-weight:600;">x ${it.quantity || 1}</span>
+                <span style="font-weight:800;">${itPrice !== '' ? '₹' + itPrice : ''}</span>
+              </div>
+            </div>
+          `;
+        }).join('') : '<div style="color:var(--text-muted); font-size:13px;">No item breakdown available</div>'}
       </div>
 
-      <div style="background:var(--input-bg); border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; margin-bottom:10px;">
-        <div style="font-weight:700; margin-bottom:6px; color:var(--text-muted); font-size:11px; letter-spacing:0.5px;">BILL DETAILS</div>
-        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Item Total</span><span>₹${itemTotal}</span></div>
-        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Delivery Fee</span><span style="color:${deliveryFee === 0 ? '#16a34a' : 'inherit'}; font-weight:600;">${deliveryFee === 0 ? 'FREE' : '₹' + deliveryFee}</span></div>
-        ${packingFee > 0 ? `<div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Packing & Platform Fee</span><span>₹${packingFee}</span></div>` : ''}
-        <div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px;"><span>Taxes & GST</span><span>₹${taxes}</span></div>
-        ${computedDiffDiscount > 0 ? `<div style="display:flex; justify-content:space-between; margin:3px 0; font-size:12.5px; color:#16a34a; font-weight:700;"><span>Discount / Savings${ord.coupon_applied ? ' (' + ord.coupon_applied + ')' : ''}</span><span>-₹${computedDiffDiscount}</span></div>` : ''}
-        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:14px; border-top:1px dashed var(--border-color); padding-top:7px; margin-top:6px;">
-          <span>Total Paid (${payMethod})</span>
+      <!-- Card 4: Payment & Bill Summary -->
+      <div class="card" style="padding:14px 16px; margin-bottom:14px;">
+        <div style="font-weight:800; font-size:14px; margin-bottom:10px;">🧾 Payment & Bill Summary</div>
+        <div style="display:flex; justify-content:space-between; margin:5px 0; font-size:13px;"><span style="color:var(--text-muted);">Item Total</span><span style="font-weight:700;">₹${itemTotal}</span></div>
+        ${freeCashDisc > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; font-size:13px; color:#16a34a; font-weight:700;"><span>Free Cash</span><span>-₹${freeCashDisc}</span></div>` : ''}
+        ${finalCouponDisc > 0 ? `<div style="display:flex; justify-content:space-between; margin:5px 0; font-size:13px; color:#16a34a; font-weight:700;"><span>Coupon Discount${ord.coupon_applied ? ' (' + ord.coupon_applied + ')' : ''}</span><span>-₹${finalCouponDisc}</span></div>` : ''}
+        <div style="display:flex; justify-content:space-between; margin:5px 0; font-size:13px;"><span style="color:var(--text-muted);">Delivery Fee</span><span style="font-weight:700; color:${deliveryFee === 0 ? '#16a34a' : 'inherit'};">${deliveryFee === 0 ? 'FREE' : '₹' + deliveryFee}</span></div>
+        <div style="display:flex; justify-content:space-between; margin:5px 0; font-size:13px;"><span style="color:var(--text-muted);">GST & Other Charges</span><span style="font-weight:700;">₹${taxes}</span></div>
+        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:16px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">
+          <span>To Pay</span>
           <span>₹${total}</span>
         </div>
       </div>
 
-      <div style="font-size:12px; color:var(--text-muted); line-height:1.45;">📍 ${addrLine}</div>
+      <button type="button" class="btn-primary" onclick="closeOrderDetails()" style="width:100%; background:#059669; border-radius:12px; padding:13px; font-size:14.5px; font-weight:800;">🔄 Back to Orders</button>
     `;
   } catch (e) {
-    body.innerHTML = `<div class="empty-hint">Could not fetch live details for Order #${orderId}.</div>`;
+    detailView.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeOrderDetails()" style="border-radius:999px; padding:7px 14px; font-weight:700;">← Back to Orders</button>
+      </div>
+      <div class="card"><div class="empty-hint">Could not fetch live details for Order #${orderId}.</div></div>
+    `;
   }
 }
 

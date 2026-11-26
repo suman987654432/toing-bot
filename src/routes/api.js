@@ -798,12 +798,55 @@ router.get('/payment-options', async (req, res) => {
 router.post('/cart/update', async (req, res) => {
 	try {
 		const {
+			active,
 			tid,
 			token,
 			userId
 		} = await getActiveCreds(getTgUserId(req));
-		const result = await SwiggyService.updateCart(req.body, tid, token, userId);
-		res.json(result);
+
+		let cartPayload = req.body;
+		if (!cartPayload.cartItems && Array.isArray(req.body.items)) {
+			const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0] || {};
+			const lat = Number(req.body.lat || selected.lat || 25.6074);
+			const lng = Number(req.body.lng || selected.lng || 85.1587);
+			const addressId = String(req.body.addressId || selected.id || active?.selectedAddressId || '');
+			cartPayload = {
+				address_nudge_check: false,
+				batch_opt_in: false,
+				cartLatLong: { lat, lng },
+				cart_saved_preferences: { is_cutlery_opted: 'false' },
+				cutleryComments: String(req.body.cookingRequest || ''),
+				address_id: addressId,
+				restaurantId: String(req.body.restaurantId || ''),
+				cartItems: req.body.items.map((i) => ({
+					menu_item_id: String(i.baseId || i.id),
+					quantity: Number(i.quantity || 1),
+					addons: i.addons || [],
+					variants: i.variants || [],
+					cost: Math.round(Number(i.price || 0) * 100),
+				})),
+			};
+		}
+
+		const result = await SwiggyService.updateCart(cartPayload, tid, token, userId);
+		const d = result.data?.data || {};
+		const deliveryRow = (d.rendering_details || []).find(
+			(r) => /delivery/i.test(String(r.key || '')) || /delivery fee/i.test(String(r.display_text || ''))
+		);
+		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined)
+			? {
+				itemTotal: Number(d.cart_subtotal ?? d.item_total ?? 0),
+				deliveryFee: Number(d.delivery_charges ?? 0),
+				deliveryLabel: deliveryRow?.display_text || '',
+				deliveryStrikeOff: deliveryRow?.intermediateText || '',
+				taxes: Number(d.total_tax ?? d.taxes?.GST ?? 0),
+				packingCharges: Number(d.total_packing_charges ?? 0),
+				couponDiscount: Number(d.coupon_discount_total ?? 0),
+				orderTotal: Number(d.order_total ?? 0),
+			}
+			: null;
+
+		res.json({ ...result, bill });
 	} catch (err) {
 		res.status(500).json({
 			success: false,
@@ -1052,8 +1095,20 @@ router.get('/orders', async (req, res) => {
 
 							const lat = selected.lat || 25.6074;
 							const lng = selected.lng || 85.1587;
-							const addressId = selected.id || active?.selectedAddressId || '';
+							let addressId = String(selected.id || active?.selectedAddressId || '');
 							const deliveryAddress = address || [selected.flat_no, selected.address, selected.address_line1].filter(Boolean).join(', ') || 'Delivery Address';
+
+							// Swiggy /api/v3/order/place rejects local "addr_*" IDs; resolve a real Swiggy address_id if needed
+							if (!addressId || addressId.startsWith('addr_')) {
+								try {
+									const swiggyAddrRes = await SwiggyService.getAddresses(tid, token, userId);
+									const swiggyAddrs = swiggyAddrRes?.addresses || [];
+									if (swiggyAddrs.length > 0) {
+										const realMatch = swiggyAddrs.find((a) => a.id && !String(a.id).startsWith('addr_'));
+										if (realMatch) addressId = String(realMatch.id);
+									}
+								} catch (e) {}
+							}
 
 							// Step 1: Sync cart with Swiggy Payments (/api/v3/update-cart)
 							const cartPayload = {
@@ -1072,18 +1127,35 @@ router.get('/orders', async (req, res) => {
 									cost: Math.round(Number(i.price || 0) * 100),
 								})),
 							};
-							await SwiggyService.updateCart(cartPayload, tid, token, userId);
+							const updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId);
+							if (!updateRes.success || (updateRes.data && updateRes.data.statusCode && updateRes.data.statusCode !== 0)) {
+								if (currentFee > 0) {
+									await WalletRepo.refundOrderFee(tgUserId, currentFee, 'Order Failed Auto-Refund');
+								}
+								return res.status(400).json({
+									success: false,
+									error: updateRes.data?.statusMessage || updateRes.error?.statusMessage || (typeof updateRes.error === 'string' ? updateRes.error : 'Swiggy cart sync failed.') + (currentFee > 0 ? ` ₹${currentFee} fee refunded.` : ''),
+									details: updateRes.data || updateRes.error,
+								});
+							}
+
+							let swiggyOrderTotal = Number(updateRes.data?.data?.order_total ?? 0);
 
 							// Step 2: Apply coupon on Swiggy if provided
 							if (couponCode) {
-								await SwiggyService.applyCoupon(couponCode, tid, token, userId);
+								const couponRes = await SwiggyService.applyCoupon(couponCode, tid, token, userId);
+								if (couponRes?.data?.data?.order_total !== undefined) {
+									swiggyOrderTotal = Number(couponRes.data.data.order_total);
+								}
 							}
+
+							const finalTxAmount = swiggyOrderTotal > 0 ? swiggyOrderTotal : total;
 
 							// Step 3: Place order on Swiggy Payments (/api/v3/order/place)
 							const placeRes = await SwiggyService.placeOrder({
 								paymentMethod: paymentMethod || 'UPIIntent',
 								upiVpa: upiVpa || '',
-								transaction_amount: total,
+								transaction_amount: finalTxAmount,
 								addressId,
 								lat,
 								lng,
