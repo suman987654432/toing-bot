@@ -768,7 +768,10 @@ router.get('/orders', async (req, res) => {
 					// 1. Fetch live orders from Swiggy account orders API (protobuf parsed)
 					if (tid || token) {
 						try {
-							const sOrders = await SwiggyService.getOrders(10, tid, token);
+							const selAddr = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+							const oLat = selAddr?.lat || 25.6074;
+							const oLng = selAddr?.lng || 85.1587;
+							const sOrders = await SwiggyService.getOrders(10, tid, token, oLat, oLng);
 							const pastOrders = sOrders.orders || sOrders.data?.data?.orders || [];
 							for (const ord of pastOrders) {
 								liveOrdersList.push({

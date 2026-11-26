@@ -927,7 +927,7 @@ const SwiggyService = {
 					if (/^[A-Za-z\s]{3,25}$/.test(v)) orderStatus = v;
 				} else if (b === 0x62 && !itemsSummary) {
 					const v = readLenStr(chunk, i + 1);
-					if (v.length >= 3 && /[A-Za-z]/.test(v) && v !== 'delivery') itemsSummary = v;
+					if (v.length >= 3 && /[A-Za-z]/.test(v) && !/[\x00-\x1F₹]/.test(v) && v !== 'delivery') itemsSummary = v;
 				} else if (b === 0x6a && !orderTime) {
 					const v = readLenStr(chunk, i + 1);
 					if (/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[0-9]{1,2})/i.test(v) && /\d{1,2}:\d{2}\s*(?:AM|PM)/i.test(v)) {
@@ -964,11 +964,16 @@ const SwiggyService = {
 		return orders;
 	},
 	// Get Orders List
-	async getOrders(orderCount = 10, tid = '', token = '') {
+	async getOrders(orderCount = 10, tid = '', token = '', lat = 25.6074, lng = 85.1587) {
 		const url = `https://disc.swiggy.com/api/v1/account/orders?order_count=${orderCount}`;
 		try {
 			const response = await axios.get(url, {
-				headers: buildDiscHeaders(tid, token),
+				headers: buildDiscHeaders(tid, token, {
+					latitude: String(lat),
+					longitude: String(lng),
+					'current-latitude': String(lat),
+					'current-longitude': String(lng),
+				}),
 				responseType: 'arraybuffer',
 				timeout: 12000,
 			});
