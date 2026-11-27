@@ -248,6 +248,36 @@ const SwiggyService = {
 	/* ==========================================================
 	   2. ADDRESS MANAGEMENT
 	   ========================================================== */
+	// Reverse Geocode via Swiggy Maps (Google-backed exact locality/sublocality)
+	async recommendAddress(lat, lng, tid = '', token = '') {
+		const url = `https://maps.swiggy.com/address/recommend?latlng=${encodeURIComponent(`${lat},${lng}`)}&enrich_poi_components=true`;
+		try {
+			const response = await axios.get(url, {
+				headers: buildDiscHeaders(tid, token, {
+					accept: 'application/json',
+					latitude: String(lat),
+					longitude: String(lng),
+				}),
+				timeout: 8000,
+			});
+			const item = response.data?.data?.[0];
+			if (!item) return { success: false };
+			const comps = Array.isArray(item.address_components) ? item.address_components : [];
+			const getComp = (...types) => comps.find((c) => Array.isArray(c.types) && types.some((t) => c.types.includes(t)))?.long_name || '';
+			const sublocality = getComp('sublocality', 'sublocality_level_1', 'neighborhood', 'nearby');
+			const locality = getComp('locality');
+			const city = getComp('city', 'administrative_area_level_2') || locality;
+			const area = [sublocality, locality].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ');
+			return {
+				success: true,
+				area: area || item.formatted_address || '',
+				city: city || '',
+				display: item.formatted_address || area || '',
+			};
+		} catch (error) {
+			return { success: false, error: error.message };
+		}
+	},
 	// Fetch All Saved Addresses (from maps.swiggy.com)
 	async getAddresses(tid, token, userId = '') {
 		const url = `https://maps.swiggy.com/addresses/v1/all?client_id=android-consumer-app${userId ? `&entityId=${userId}` : ''}&entityType=1&marketPlaceId=1`;

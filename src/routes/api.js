@@ -585,7 +585,17 @@ router.get('/addresses/reverse-geocode', async (req, res) => {
 		success: false,
 		error: 'Invalid coordinates'
 	});
-	const rev = await reverseGeocodeCoords(lat, lng);
+	let rev = null;
+	try {
+		const { tid, token } = await getActiveCreds(getTgUserId(req));
+		const swiggyRev = await SwiggyService.recommendAddress(lat, lng, tid, token);
+		if (swiggyRev?.success && (swiggyRev.area || swiggyRev.display)) {
+			rev = swiggyRev;
+		}
+	} catch (e) {}
+	if (!rev) {
+		rev = await reverseGeocodeCoords(lat, lng);
+	}
 	res.json({
 		success: true,
 		lat,
