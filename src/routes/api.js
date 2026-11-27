@@ -804,11 +804,13 @@ router.post('/addresses/add-link', async (req, res) => {
 					lng = parseFloat(mFinal[2]);
 				}
 				const htmlStr = typeof r.data === 'string' ? r.data : '';
+				const decodedHtml = htmlStr.replace(/%2F/gi, '/').replace(/%3A/gi, ':').replace(/%3F/gi, '?').replace(/%3D/gi, '=').replace(/%26/gi, '&');
 				const ofoMatch = decodedFinalUrl.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i)
-					|| htmlStr.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s"'<>]+)/i);
+					|| decodedHtml.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s"'<>]+)/i);
+				let shareErr = '';
 				if (ofoMatch) {
 					if (!resolvedName) resolvedName = decodeURIComponent(ofoMatch[1]).trim();
-					const swShare = await SwiggyService.resolveShareAddress(ofoMatch[2], resolvedUid, decodedFinalUrl, active.tid, active.token);
+					const swShare = await SwiggyService.resolveShareAddress(ofoMatch[2], resolvedUid, `https://www.swiggy.com/ofo/address/${ofoMatch[1]}/${ofoMatch[2]}?pushScreen=true`, active.tid, active.token);
 					if (swShare.success && swShare.address) {
 						const a = swShare.address;
 						lat = a.lat;
@@ -821,13 +823,17 @@ router.post('/addresses/add-link', async (req, res) => {
 						if (!resolvedName && a.name) resolvedName = a.name;
 						if (a.phone) resolvedPhone = a.phone;
 						if (a.tag) resolvedTag = a.tag;
+					} else {
+						shareErr = swShare.error || 'Failed to resolve share link';
 					}
 				}
 			} catch (e) {}
 			if (!lat || !lng) {
 				return res.status(400).json({
 					success: false,
-					error: `Could not extract coordinates from this link${resolvedName ? ` (Recipient: ${resolvedName})` : ''}. Please paste a Swiggy Share Address Link or Google Maps link!`,
+					error: shareErr
+						? `Swiggy Share Link error${resolvedName ? ` (${resolvedName})` : ''}: ${shareErr}`
+						: `Could not extract coordinates from this link${resolvedName ? ` (Recipient: ${resolvedName})` : ''}. Please paste a Swiggy Share Address Link or Google Maps link!`,
 				});
 			}
 		}

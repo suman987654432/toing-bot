@@ -332,29 +332,18 @@ const SwiggyService = {
 		const cleanId = String(shareId || '').trim().split(/[?#]/)[0];
 		if (!cleanId) return { success: false, error: 'Missing share ID' };
 		const url = `https://www.swiggy.com/mapi/social/getAddress/${encodeURIComponent(cleanId)}`;
+		const swiggyWebCookie = process.env.SWIGGY_WEB_COOKIE || 'is_app=1; platform=Swiggy-Android; a_platform=an; __SW=QjDG5DVcjuTpNNnT_oiinYR8pA_bqmbD; _is_logged_in=1; _session_tid=587798ad1dbd8962426859e3281438db3d003a78ad5b47c07cb155cc4fbbe953f538784b2d9730523d3fa7c2f5e324fa262224e9b21cf3d11babb23627ac9f3121a83f4b62b0f1ff09f1221157f701b5b6253bf29de6f6f463107decdf968fc7a8fa60f48ce85121344f0ab5bedbb9ba44ebe72b481c3dff02769284e83d03481ff0f54dab6a79966d5f527ecf4905767428a45a650076e041a64bb7f20e7776cd8a5f9c4a9b445b323e7586b406aa1b2c14719b7e8842f6e43d627742aa0d284797477f777416bd29f22169001a3ce96281bf607e3663d0a0849575093a822c3b773275d4dd62661d812dbd5d87edff0da38eedc545a60b7977b1b1bddf24a4e79a8d9401a69a19667ae6bd9319c41c72989183bd22ca5012f19fdfdc54a422ef12c018e74b50ebfedf50a99ca558e62e045f2c74d57370e7ea2160a99e52d92d2bde2788f56dc02a88fe00e57e81385c193556fe489c401da44d14fea1b97f961f21b431367195faeb9872834141c79528cd2d5e1d2baf6126705e21a3f66027d01fafc19dac0e1e40e3bc2dd0a19a1e487672198ecc77409d26bd2b5ae1240ab86ca74140d3c1086430b2b23d73da8189df6150b42c9350bc4e0dc6283be0b5b8c88e82ba01c72d476fa6e2321b13aaa4154e094cfb2c32d6fb574215d470db80636f5d7a1ec373c748f20e55fcc88659b8528ba806796a72cc89a14c13608e3ac761020827e377cae270edaa939ccaf385a05fc359a93f252d0ca763f23e53d60319e6f8bff2226ece16c483e470a38533abe537ec29f9ab98ab4812674afe4920eae2fc5d7780ade884398d0468c95edccfb1855234abe5a6b7270b79a5a4a9173491345eb7648719a8d432a80fbd4b7118098ccd9432cf9fbcbd6e4d8cc009d477b77afbadfe187c32608224fe3a54da6516bc5c66fa875e0f9bb7a812fddf524e6893fcbae26293909a8fee558173a8bdc01b2d49465cea5dd9dcf54b5471c361bef1dc66980570052eb8806ba719ca1d9f978fb3e0a145bf8d23c8b337f9d7c2d95917dd928efa29109da6ad0fdaa34459415a84fa324df08bfcbf2f8fa32f15dd1bdac22faf41eef84544877b308ff143f2aa0566ca166881adf01abf1f5f675774f856da460fda37d3f28e555c92cf0862929c4e83a82771a6848bf1b855b6b3765c19d741dec104a31d03e5abc831696415fdedabef69a015a19c54fb9fbaf4ce5c69f57467688ed591dd33c092aa7742de7a8c6df69b544523e5; tid=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsIktJRCI6IjIifQ.eyJzZXNzaW9uX2RhdGEiOiJuTkk4dEZaWkdKL0JSVjBrT0tpaGlkYzUrU1NUMU9kSWFtZEo1eGlYV3FxNlIvVm1BSyszNVB3R01SdEtyZ1N4ZlBaS0xIVWRicjRTWlFuS1U0b0NjWEZlSG1kaGM1NTdrbFA4a3RDd0VRRTBHL2QxU0hiNUp0dmM1ZGcrc1NkTlpqSURmUHhrYTNyamc4VnBrLzVUaWFWYWtRMWNWQngzaTlqdDYrU2FkWjRFdTliZ1ZIWUdGVTdzVUNOWS9GbkZxMThpV3JkSzN2TlpFaUtWbnhTb0t0Z2lMN3N6ZzVsMStCQTU2TGczUFo1aGM3aUpMcUlSOXlMMlhGTVdJSVpFTmNZbDBPUkhpMkNpS2RVVVNHNjdHMXQrWVhwcVpDZkFzRHRNN20xVk41S2JpZVlKYUpoN29uc1U2djNCRWNUanRyNGxnVm9sUEwrcmNYWnFPakE2SWNPcEtuQ1RNVmg5RTZwb21sMD0iLCJleHAiOjE3OTU2MzA1NzcsInNpZCI6InVlbmQ4YWQ1YWFlLTRiZjMtNDNhZC1iNzNlLWJhYzE4Y2I5MyIsImlhdCI6MTc5MzAzODU3NywiaXNzIjoiaGFwIiwidXNlcl9pZCI6IjI0MDU2NjI2MiIsInN1YiI6ImUyMWZmNzk5LWY2MzEtNGZiMS05OTJhLTk3M2JiNTA3YjlkNiJ9.wZ0V6DGyNOGfoQFR8zxjaAnmTa2l4VyCdzfpBnLArys; token=2be7ebfb-d0b4-4c36-b9cb-54d6dd3820ced9b21a91-e736-4196-80b8-7bb135aa67f5; _device_id=224f98f617ba29a5; _swuid=224f98f617ba29a5; _cid=MjQwNTY2MjYy; _sid=uend8ad5aae-4bf3-43ad-b73e-bac18cb93';
 		try {
-			const cookieParts = ['_is_logged_in=true', 'is_app=true', 'platform=mweb'];
-			if (tid) {
-				cookieParts.push(`_session_tid=${tid}`, `tid=${tid}`);
-			}
-			if (token) {
-				cookieParts.push(`token=${token}`);
-			}
-			if (userId) {
-				cookieParts.push(`_cid=${userId}`);
-			}
 			const headers = {
 				'user-agent': 'Mozilla/5.0 (Linux; Android 15; Pixel 9a Build/BD4A.250505.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.46 Mobile Safari/537.36',
 				'__fetch_req__': 'true',
 				'content-type': 'application/json',
 				'platform': 'mweb',
 				'x-requested-with': 'in.swiggy.android',
-				'user-id': String(userId || '240566262'),
+				'user-id': '240566262',
 				'referer': refererUrl || `https://www.swiggy.com/ofo/address/user/${cleanId}?pushScreen=true`,
-				'cookie': cookieParts.join('; '),
+				'cookie': swiggyWebCookie,
 			};
-			if (tid) headers['tid'] = tid;
-			if (token) headers['token'] = token;
 			const response = await axios.get(url, {
 				headers,
 				timeout: 8000,
