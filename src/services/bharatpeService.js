@@ -69,28 +69,31 @@ const BharatPeService = {
     const sDate = new Date(now - days * 86400000).toISOString().slice(0, 10);
     const eDate = new Date(now + 86400000).toISOString().slice(0, 10);
 
+    const url = 'https://payments-tesseract.bharatpe.in/api/v1/merchant/transactions';
+    const baseCfg = {
+      params: {
+        module: 'PAYMENT_QR',
+        merchantId,
+        sDate,
+        eDate,
+      },
+      headers: {
+        token,
+        accept: 'application/json, text/plain, */*',
+        origin: 'https://enterprise.bharatpe.in',
+        referer: 'https://enterprise.bharatpe.in/',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      },
+      timeout: 15000,
+    };
+
     try {
-      const axiosCfg = {
-        params: {
-          module: 'PAYMENT_QR',
-          merchantId,
-          sDate,
-          eDate,
-        },
-        headers: {
-          token,
-          accept: 'application/json, text/plain, */*',
-          origin: 'https://enterprise.bharatpe.in',
-          referer: 'https://enterprise.bharatpe.in/',
-          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        },
-        timeout: 15000,
-      };
+      const axiosCfg = { ...baseCfg };
       if (proxyUrl) {
         axiosCfg.httpsAgent = createProxyAgent(proxyUrl);
         axiosCfg.proxy = false;
       }
-      const response = await axios.get('https://payments-tesseract.bharatpe.in/api/v1/merchant/transactions', axiosCfg);
+      const response = await axios.get(url, axiosCfg);
 
       const txns = response.data?.data?.transactions || [];
       return {
@@ -98,6 +101,34 @@ const BharatPeService = {
         transactions: txns,
       };
     } catch (err) {
+      // Residential proxies can occasionally hit a bad exit node (502/ECONNRESET); retry proxy once, then direct
+      if (proxyUrl && !err.response) {
+        console.warn('[BharatPe Proxy Failed]:', err.message, '— retrying proxy once...');
+        try {
+          const retryRes = await axios.get(url, {
+            ...baseCfg,
+            httpsAgent: createProxyAgent(proxyUrl),
+            proxy: false,
+          });
+          const txns = retryRes.data?.data?.transactions || [];
+          return {
+            success: Boolean(retryRes.data?.status),
+            transactions: txns,
+          };
+        } catch (proxyRetryErr) {
+          console.warn('[BharatPe Proxy Retry Failed]:', proxyRetryErr.message, '— retrying direct...');
+          try {
+            const directRes = await axios.get(url, baseCfg);
+            const txns = directRes.data?.data?.transactions || [];
+            return {
+              success: Boolean(directRes.data?.status),
+              transactions: txns,
+            };
+          } catch (directErr) {
+            console.error('[BharatPe Direct Fallback Error]:', directErr.response?.status, directErr.response?.data || directErr.message);
+          }
+        }
+      }
       console.error('[BharatPe API Error]:', err.response?.status, err.response?.data || err.message);
       return {
         success: false,
