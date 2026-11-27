@@ -515,6 +515,19 @@ router.get('/addresses/suggest', async (req, res) => {
 		suggestions: []
 	});
 	try {
+		const { active, tid, token } = await getActiveCreds(getTgUserId(req));
+		if (tid) {
+			const sel = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+			const swRes = await SwiggyService.placeAutocomplete(q, sel?.lat || 25.6074, sel?.lng || 85.1587, tid, token);
+			if (swRes?.success && swRes.suggestions?.length > 0) {
+				return res.json({
+					success: true,
+					suggestions: swRes.suggestions,
+				});
+			}
+		}
+	} catch (e) {}
+	try {
 		const pResp = await axios.get('https://photon.komoot.io/api/', {
 			params: {
 				q: `${q}, India`,
@@ -732,18 +745,46 @@ router.post('/addresses/add-link', async (req, res) => {
 		let resolvedText = '';
 		let resolvedArea = '';
 		let resolvedCity = '';
-		// 1. Direct URL query params (?lat=...&lng=...) or Google Maps @lat,lng
-		const coordMatch = rawInput.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || rawInput.match(/[?&](?:q|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/);
-		if (coordMatch) {
-			lat = parseFloat(coordMatch[1]);
-			lng = parseFloat(coordMatch[2]);
+		let resolvedFlatNo = '';
+		let resolvedPincode = '';
+		let resolvedPhone = '';
+		let resolvedTag = 'Home';
+		const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
+
+		// 0. Swiggy Share Address Link (https://www.swiggy.com/ofo/address/<name>/<shareId>)
+		const directOfo = rawInput.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i);
+		if (directOfo) {
+			if (!resolvedName) resolvedName = decodeURIComponent(directOfo[1]).trim();
+			const swShare = await SwiggyService.resolveShareAddress(directOfo[2], resolvedUid, rawInput);
+			if (swShare.success && swShare.address) {
+				const a = swShare.address;
+				lat = a.lat;
+				lng = a.lng;
+				resolvedText = a.formatted_address;
+				resolvedFlatNo = a.flat_no;
+				resolvedArea = a.area;
+				resolvedCity = a.city;
+				resolvedPincode = a.pincode;
+				if (!resolvedName && a.name) resolvedName = a.name;
+				if (a.phone) resolvedPhone = a.phone;
+				if (a.tag) resolvedTag = a.tag;
+			}
 		}
-		try {
-			const urlObj = new URL(rawInput);
-			if (urlObj.searchParams.get('lat')) lat = parseFloat(urlObj.searchParams.get('lat'));
-			if (urlObj.searchParams.get('lng')) lng = parseFloat(urlObj.searchParams.get('lng'));
-		} catch (e) {}
-		// 2. If Swiggy onelink / short URL, follow redirect or inspect inner URL
+
+		// 1. Direct URL query params (?lat=...&lng=...) or Google Maps @lat,lng
+		if (!lat || !lng) {
+			const coordMatch = rawInput.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || rawInput.match(/[?&](?:q|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+			if (coordMatch) {
+				lat = parseFloat(coordMatch[1]);
+				lng = parseFloat(coordMatch[2]);
+			}
+			try {
+				const urlObj = new URL(rawInput);
+				if (urlObj.searchParams.get('lat')) lat = parseFloat(urlObj.searchParams.get('lat'));
+				if (urlObj.searchParams.get('lng')) lng = parseFloat(urlObj.searchParams.get('lng'));
+			} catch (e) {}
+		}
+		// 2. If Swiggy onelink / short URL, follow redirect or resolve share link
 		if (!lat && /^https?:\/\//i.test(rawInput)) {
 			try {
 				const r = await axios.get(rawInput, {
@@ -761,25 +802,43 @@ router.post('/addresses/add-link', async (req, res) => {
 					lng = parseFloat(mFinal[2]);
 				}
 				const htmlStr = typeof r.data === 'string' ? r.data : '';
-				const ofoMatch = htmlStr.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\//i) || rawInput.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\//i);
-				if (ofoMatch && !resolvedName) {
-					resolvedName = decodeURIComponent(ofoMatch[1]).trim();
+				const ofoMatch = finalUrl.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i)
+					|| htmlStr.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s"'<>]+)/i);
+				if (ofoMatch) {
+					if (!resolvedName) resolvedName = decodeURIComponent(ofoMatch[1]).trim();
+					const swShare = await SwiggyService.resolveShareAddress(ofoMatch[2], resolvedUid, finalUrl);
+					if (swShare.success && swShare.address) {
+						const a = swShare.address;
+						lat = a.lat;
+						lng = a.lng;
+						resolvedText = a.formatted_address;
+						resolvedFlatNo = a.flat_no;
+						resolvedArea = a.area;
+						resolvedCity = a.city;
+						resolvedPincode = a.pincode;
+						if (!resolvedName && a.name) resolvedName = a.name;
+						if (a.phone) resolvedPhone = a.phone;
+						if (a.tag) resolvedTag = a.tag;
+					}
 				}
 			} catch (e) {}
 			if (!lat || !lng) {
 				return res.status(400).json({
 					success: false,
-					error: `Swiggy short link does not expose coordinates publicly${resolvedName ? ` (Recipient: ${resolvedName})` : ''}. Please paste full address text or use "Add Manually on Map"!`,
+					error: `Could not extract coordinates from this link${resolvedName ? ` (Recipient: ${resolvedName})` : ''}. Please paste a Swiggy Share Address Link or Google Maps link!`,
 				});
 			}
 		}
-		// 3. Reverse geocode if we got lat/lng from link, or forward geocode if user pasted plain address text
+		// 3. Reverse geocode if we got lat/lng from link (and no formatted text yet), or forward geocode plain text
 		if (lat && lng) {
-			const rev = await reverseGeocodeCoords(lat, lng);
-			if (rev) {
-				resolvedText = rev.display;
-				resolvedArea = rev.area;
-				resolvedCity = rev.city;
+			if (!resolvedText) {
+				const swRev = await SwiggyService.recommendAddress(lat, lng, active.tid, active.token);
+				const rev = (swRev?.success && swRev.display) ? swRev : await reverseGeocodeCoords(lat, lng);
+				if (rev) {
+					resolvedText = rev.display;
+					resolvedArea = rev.area;
+					resolvedCity = rev.city;
+				}
 			}
 		} else {
 			const geo = await geocodeAddress([`${rawInput}, India`, rawInput]);
@@ -790,22 +849,24 @@ router.post('/addresses/add-link', async (req, res) => {
 			}
 		}
 		const userCity = resolvedCity || active.addresses?.[0]?.city || 'Patna';
-		const displayAddress = resolvedText || rawInput;
+		const displayAddress = resolvedFlatNo && resolvedText && !resolvedText.toLowerCase().includes(resolvedFlatNo.toLowerCase())
+			? `${resolvedFlatNo}, ${resolvedText}`
+			: (resolvedText || rawInput);
 		const finalLat = lat || active.addresses?.[0]?.lat || 25.6074;
 		const finalLng = lng || active.addresses?.[0]?.lng || 85.1587;
 		let swiggyAddrId = '';
 		if (active.tid && active.token) {
-			const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
 			const swAdd = await SwiggyService.addAddress({
 				name: resolvedName || active.userName || 'Delivery User',
-				phone: active.phone,
+				phone: resolvedPhone || active.phone,
 				formatted_address: displayAddress,
-				flat_no: displayAddress.split(',')[0] || '',
+				flat_no: resolvedFlatNo || displayAddress.split(',')[0] || '',
 				area: resolvedArea || userCity,
 				city: userCity,
+				pincode: resolvedPincode || '800001',
+				tag: resolvedTag,
 				lat: finalLat,
 				lng: finalLng,
-				tag: 'OTHER',
 			}, active.tid, active.token, resolvedUid);
 			if (swAdd.success && swAdd.addressId) swiggyAddrId = swAdd.addressId;
 		}

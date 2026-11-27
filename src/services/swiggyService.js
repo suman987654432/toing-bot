@@ -278,6 +278,99 @@ const SwiggyService = {
 			return { success: false, error: error.message };
 		}
 	},
+	// Autocomplete Area / Colony via Swiggy Maps (Google-backed, from swiggy_location.har)
+	async placeAutocomplete(input, lat = 25.6074, lng = 85.1587, tid = '', token = '') {
+		const url = `https://maps.swiggy.com/place/autocomplete?input=${encodeURIComponent(input)}&location=${encodeURIComponent(`${lat},${lng}`)}&radius=50000`;
+		try {
+			const response = await axios.get(url, {
+				headers: buildDiscHeaders(tid, token, {
+					accept: 'application/json',
+					latitude: String(lat),
+					longitude: String(lng),
+				}),
+				timeout: 6000,
+			});
+			const list = Array.isArray(response.data?.data) ? response.data.data.slice(0, 4) : [];
+			const resolved = await Promise.all(
+				list.map(async (item) => {
+					const desc = item.description || '';
+					const main = item.structured_formatting?.main_text || desc.split(',')[0] || input;
+					const sec = item.structured_formatting?.secondary_text || '';
+					let sLat = null, sLng = null, sCity = '';
+					if (item.place_id) {
+						try {
+							const r2 = await axios.get(`https://maps.swiggy.com/address/recommend?place_id=${encodeURIComponent(item.place_id)}&enrich_poi_components=true`, {
+								headers: buildDiscHeaders(tid, token, { accept: 'application/json' }),
+								timeout: 5000,
+							});
+							const d0 = r2.data?.data?.[0];
+							if (d0?.geometry?.location) {
+								sLat = parseFloat(d0.geometry.location.lat);
+								sLng = parseFloat(d0.geometry.location.lng);
+							}
+							const comps = Array.isArray(d0?.address_components) ? d0.address_components : [];
+							sCity = comps.find((c) => Array.isArray(c.types) && (c.types.includes('city') || c.types.includes('locality')))?.long_name || '';
+						} catch (e) {}
+					}
+					if (!sLat || !sLng) return null;
+					return {
+						area: main,
+						city: sCity || sec.split(',').slice(-3, -2)[0]?.trim() || '',
+						display: desc || `${main}, ${sec}`,
+						lat: sLat,
+						lng: sLng,
+					};
+				})
+			);
+			return { success: true, suggestions: resolved.filter(Boolean) };
+		} catch (error) {
+			return { success: false, suggestions: [], error: error.message };
+		}
+	},
+	// Resolve Swiggy Share Address Link via mapi/social/getAddress (from swiggy_address.har)
+	async resolveShareAddress(shareId, userId = '', refererUrl = '') {
+		const cleanId = String(shareId || '').trim().split(/[?#]/)[0];
+		if (!cleanId) return { success: false, error: 'Missing share ID' };
+		const url = `https://www.swiggy.com/mapi/social/getAddress/${encodeURIComponent(cleanId)}`;
+		try {
+			const response = await axios.get(url, {
+				headers: {
+					'user-agent': 'Mozilla/5.0 (Linux; Android 15; Pixel 9a Build/BD4A.250505.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.46 Mobile Safari/537.36',
+					'__fetch_req__': 'true',
+					'content-type': 'application/json',
+					'platform': 'mweb',
+					'x-requested-with': 'in.swiggy.android',
+					'user-id': String(userId || '240566262'),
+					'referer': refererUrl || `https://www.swiggy.com/ofo/address/user/${cleanId}?pushScreen=true`,
+				},
+				timeout: 8000,
+			});
+			const addr = response.data?.data?.address;
+			const act = addr?.actual_address;
+			const lat = parseFloat(act?.location?.lat ?? act?.location?.latitude);
+			const lng = parseFloat(act?.location?.lng ?? act?.location?.longitude);
+			if (!act || !lat || !lng) {
+				return { success: false, error: response.data?.statusMessage || 'Address not found in share link' };
+			}
+			return {
+				success: true,
+				address: {
+					lat,
+					lng,
+					formatted_address: act.formatted_address || '',
+					flat_no: act.address_line || '',
+					area: act.locality || act.city || '',
+					city: act.city || '',
+					pincode: act.postal_code || '',
+					name: act.contact_name || act.account_details?.name || '',
+					phone: act.phone || act.account_details?.phone || '',
+					tag: (Array.isArray(act.tags) && act.tags[0]) || 'Friends and Family',
+				},
+			};
+		} catch (error) {
+			return { success: false, error: error.response?.data?.statusMessage || error.message };
+		}
+	},
 	// Fetch All Saved Addresses (from maps.swiggy.com)
 	async getAddresses(tid, token, userId = '') {
 		const url = `https://maps.swiggy.com/addresses/v1/all?client_id=android-consumer-app${userId ? `&entityId=${userId}` : ''}&entityType=1&marketPlaceId=1`;
