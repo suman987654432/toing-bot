@@ -328,21 +328,35 @@ const SwiggyService = {
 		}
 	},
 	// Resolve Swiggy Share Address Link via mapi/social/getAddress (from swiggy_address.har)
-	async resolveShareAddress(shareId, userId = '', refererUrl = '') {
+	async resolveShareAddress(shareId, userId = '', refererUrl = '', tid = '', token = '') {
 		const cleanId = String(shareId || '').trim().split(/[?#]/)[0];
 		if (!cleanId) return { success: false, error: 'Missing share ID' };
 		const url = `https://www.swiggy.com/mapi/social/getAddress/${encodeURIComponent(cleanId)}`;
 		try {
+			const cookieParts = ['_is_logged_in=true', 'is_app=true', 'platform=mweb'];
+			if (tid) {
+				cookieParts.push(`_session_tid=${tid}`, `tid=${tid}`);
+			}
+			if (token) {
+				cookieParts.push(`token=${token}`);
+			}
+			if (userId) {
+				cookieParts.push(`_cid=${userId}`);
+			}
+			const headers = {
+				'user-agent': 'Mozilla/5.0 (Linux; Android 15; Pixel 9a Build/BD4A.250505.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.46 Mobile Safari/537.36',
+				'__fetch_req__': 'true',
+				'content-type': 'application/json',
+				'platform': 'mweb',
+				'x-requested-with': 'in.swiggy.android',
+				'user-id': String(userId || '240566262'),
+				'referer': refererUrl || `https://www.swiggy.com/ofo/address/user/${cleanId}?pushScreen=true`,
+				'cookie': cookieParts.join('; '),
+			};
+			if (tid) headers['tid'] = tid;
+			if (token) headers['token'] = token;
 			const response = await axios.get(url, {
-				headers: {
-					'user-agent': 'Mozilla/5.0 (Linux; Android 15; Pixel 9a Build/BD4A.250505.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.46 Mobile Safari/537.36',
-					'__fetch_req__': 'true',
-					'content-type': 'application/json',
-					'platform': 'mweb',
-					'x-requested-with': 'in.swiggy.android',
-					'user-id': String(userId || '240566262'),
-					'referer': refererUrl || `https://www.swiggy.com/ofo/address/user/${cleanId}?pushScreen=true`,
-				},
+				headers,
 				timeout: 8000,
 			});
 			const addr = response.data?.data?.address;

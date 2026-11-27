@@ -755,7 +755,7 @@ router.post('/addresses/add-link', async (req, res) => {
 		const directOfo = rawInput.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i);
 		if (directOfo) {
 			if (!resolvedName) resolvedName = decodeURIComponent(directOfo[1]).trim();
-			const swShare = await SwiggyService.resolveShareAddress(directOfo[2], resolvedUid, rawInput);
+			const swShare = await SwiggyService.resolveShareAddress(directOfo[2], resolvedUid, rawInput, active.tid, active.token);
 			if (swShare.success && swShare.address) {
 				const a = swShare.address;
 				lat = a.lat;
@@ -796,17 +796,19 @@ router.post('/addresses/add-link', async (req, res) => {
 					validateStatus: () => true,
 				});
 				const finalUrl = r.request?.res?.responseUrl || rawInput;
-				const mFinal = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || finalUrl.match(/[?&]lat=(-?\d+\.\d+).*?[?&]lng=(-?\d+\.\d+)/);
+				let decodedFinalUrl = finalUrl;
+				try { decodedFinalUrl = decodeURIComponent(decodeURIComponent(finalUrl)); } catch (e) { try { decodedFinalUrl = decodeURIComponent(finalUrl); } catch (e2) {} }
+				const mFinal = decodedFinalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || decodedFinalUrl.match(/[?&]lat=(-?\d+\.\d+).*?[?&]lng=(-?\d+\.\d+)/);
 				if (mFinal) {
 					lat = parseFloat(mFinal[1]);
 					lng = parseFloat(mFinal[2]);
 				}
 				const htmlStr = typeof r.data === 'string' ? r.data : '';
-				const ofoMatch = finalUrl.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i)
+				const ofoMatch = decodedFinalUrl.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i)
 					|| htmlStr.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s"'<>]+)/i);
 				if (ofoMatch) {
 					if (!resolvedName) resolvedName = decodeURIComponent(ofoMatch[1]).trim();
-					const swShare = await SwiggyService.resolveShareAddress(ofoMatch[2], resolvedUid, finalUrl);
+					const swShare = await SwiggyService.resolveShareAddress(ofoMatch[2], resolvedUid, decodedFinalUrl, active.tid, active.token);
 					if (swShare.success && swShare.address) {
 						const a = swShare.address;
 						lat = a.lat;
