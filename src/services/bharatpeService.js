@@ -59,9 +59,11 @@ const BharatPeService = {
   buildUpiPayment(amount, refId) {
     const { upiId, merchantName } = this.getConfig();
     if (!upiId) return { upiUri: '', qrUrl: '', upiId: '' };
+    const amt = Number(amount).toFixed(2);
     const pn = encodeURIComponent(String(merchantName || 'Toing Pro').trim());
-    // Standard BharatPe merchant UPI URI (omit am=/tr=/tn= so GPay/NPCI never blocks web intent or QR payments)
-    const upiUri = `upi://pay?pa=${upiId}&pn=${pn}&cu=INR`;
+    const tn = encodeURIComponent(`Deposit ${refId}`);
+    // Pre-fill exact amount in QR so scanning automatically fills ₹amount (omit unsigned tr= to avoid UPI app rejections)
+    const upiUri = `upi://pay?pa=${upiId}&pn=${pn}&am=${amt}&cu=INR&tn=${tn}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(upiUri)}`;
     return { upiUri, qrUrl, upiId };
   },
