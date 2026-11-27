@@ -1703,9 +1703,10 @@ function renderCartBill(rawItemTotal) {
 	if (delivFeeEl) {
 		if (deliveryFee === null) {
 			delivFeeEl.textContent = '...';
-		} else if (deliveryFee === 0) {
-			const strike = live.deliveryStrikeOff ? `<span style="text-decoration:line-through; color:var(--text-muted); margin-right:4px;">₹${live.deliveryStrikeOff}</span>` : '';
-			delivFeeEl.innerHTML = `${strike}<span style="color:#16a34a; font-weight:700;">FREE</span>`;
+		} else if (deliveryFee === 0 || live?.isFreeDelivery) {
+			const strikeVal = live?.deliveryStrikeOff || '25';
+			const strike = strikeVal ? `<span class="strikethrough-gray" style="margin-right:4px;">₹${strikeVal}</span>` : '';
+			delivFeeEl.innerHTML = `${strike}<span class="text-green-bold">FREE</span>`;
 		} else {
 			delivFeeEl.textContent = `₹${deliveryFee}`;
 		}

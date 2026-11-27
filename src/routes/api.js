@@ -1215,16 +1215,31 @@ router.post('/cart/update', async (req, res) => {
 				bhimStatus = 'need_99';
 			}
 		}
+		// Check for Free Delivery campaign or rendering details
+		const hasFreeDeliveryCampaign = (d.appliedTradeCampaignHeaders || []).some(
+			(c) => c.discountType === 'FREE_DELIVERY' || c.shareType === 'FREE_DELIVERY'
+		) || Boolean(d.fullCouponLessFreeDeliveryApplied);
+
 		const deliveryRow = (d.rendering_details || []).find(
-			(r) => /delivery fee/i.test(String(r.display_text || '')) || ['delivery_charges', 'free_non_super_delivery_exclusive', 'delivery_fee'].includes(String(r.key || '')));
-		const rawDelivLabel = String(deliveryRow?.display_text || '').replace(/^"+|"+$/g, '').trim();
+			(r) => ['free_non_super_delivery_exclusive', 'positive_delivery_charges_exclusive', 'delivery_charges', 'delivery_fee'].includes(String(r.key || '')) ||
+				/delivery fee/i.test(String(r.display_text || ''))
+		);
+		const rawDelivLabel = String(deliveryRow?.display_text || '').replace(/^"+|"+$/g, '').trim() || 'Delivery Fee';
 		const itemTotalRow = (d.rendering_details || []).find((r) => r.key === 'item_total');
+
+		const rawDeliveryFee = Number(d.delivery_charges ?? 0);
+		const isFreeDelivery = hasFreeDeliveryCampaign || deliveryRow?.key === 'free_non_super_delivery_exclusive' || String(deliveryRow?.value || '').toUpperCase() === 'FREE' || rawDeliveryFee === 0;
+
+		const deliveryFee = isFreeDelivery ? 0 : rawDeliveryFee;
+		const deliveryStrikeOff = deliveryRow?.intermediateText || d.deliveryChargeStrikeOffAmount || (isFreeDelivery && rawDeliveryFee > 0 ? String(rawDeliveryFee) : (isFreeDelivery ? '25' : ''));
+
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
 			itemTotal: Number(d.cart_subtotal ?? d.item_total ?? 0),
 			strikeOffItemTotal: itemTotalRow?.intermediateText || '',
-			deliveryFee: Number(d.delivery_charges ?? 0),
+			deliveryFee,
+			isFreeDelivery,
 			deliveryLabel: rawDelivLabel,
-			deliveryStrikeOff: deliveryRow?.intermediateText || '',
+			deliveryStrikeOff,
 			taxes: Number(d.total_tax ?? d.taxes?.GST ?? 0),
 			packingCharges: Number(d.total_packing_charges ?? 0),
 			couponDiscount: Number(d.coupon_discount_total ?? 0),
