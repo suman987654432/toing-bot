@@ -1224,10 +1224,16 @@ router.post('/cart/update', async (req, res) => {
 				bhimStatus = 'need_99';
 			}
 		}
-		// Check for Free Delivery campaign or rendering details
+		const itemSubtotal = Number(d.cart_subtotal ?? d.item_total ?? (Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0));
+
+		// Check if Swiggy genuinely unlocks Free Delivery for this restaurant/location:
+		// 1. Swiggy appliedTradeCampaignHeaders has FREE_DELIVERY
+		// 2. Swiggy fullCouponLessFreeDeliveryApplied is true
+		// 3. Swiggy offerPresentationInfo has deliveryFeeSavingsInfo (e.g. "₹25 saved with free delivery")
+		// 4. Rendering details has key 'free_non_super_delivery_exclusive' or value 'FREE'
 		const hasFreeDeliveryCampaign = (d.appliedTradeCampaignHeaders || []).some(
 			(c) => c.discountType === 'FREE_DELIVERY' || c.shareType === 'FREE_DELIVERY'
-		) || Boolean(d.fullCouponLessFreeDeliveryApplied);
+		) || Boolean(d.fullCouponLessFreeDeliveryApplied) || Boolean(d.offerPresentationInfo?.deliveryFeeSavingsInfo);
 
 		const deliveryRow = (d.rendering_details || []).find(
 			(r) => ['free_non_super_delivery_exclusive', 'positive_delivery_charges_exclusive', 'delivery_charges', 'delivery_fee'].includes(String(r.key || '')) ||
@@ -1240,20 +1246,25 @@ router.post('/cart/update', async (req, res) => {
 		const isFreeDelivery = hasFreeDeliveryCampaign || deliveryRow?.key === 'free_non_super_delivery_exclusive' || String(deliveryRow?.value || '').toUpperCase() === 'FREE' || rawDeliveryFee === 0;
 
 		const deliveryFee = isFreeDelivery ? 0 : rawDeliveryFee;
-		const deliveryStrikeOff = deliveryRow?.intermediateText || d.deliveryChargeStrikeOffAmount || (isFreeDelivery && rawDeliveryFee > 0 ? String(rawDeliveryFee) : (isFreeDelivery ? '25' : ''));
+		const deliveryStrikeOff = deliveryRow?.intermediateText || d.deliveryChargeStrikeOffAmount || (rawDeliveryFee > 0 ? String(rawDeliveryFee) : '25');
+
+		const taxes = Number(d.total_tax ?? d.taxes?.GST ?? 0);
+		const packingCharges = Number(d.total_packing_charges ?? 0);
+		const couponDiscount = Number(d.coupon_discount_total ?? 0);
+		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount));
 
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
-			itemTotal: Number(d.cart_subtotal ?? d.item_total ?? 0),
+			itemTotal: itemSubtotal,
 			strikeOffItemTotal: itemTotalRow?.intermediateText || '',
 			deliveryFee,
 			isFreeDelivery,
 			deliveryLabel: rawDelivLabel,
 			deliveryStrikeOff,
-			taxes: Number(d.total_tax ?? d.taxes?.GST ?? 0),
-			packingCharges: Number(d.total_packing_charges ?? 0),
-			couponDiscount: Number(d.coupon_discount_total ?? 0),
+			taxes,
+			packingCharges,
+			couponDiscount,
 			couponApplied: d.coupon_applied || '',
-			orderTotal: Number(d.order_total ?? 0),
+			orderTotal: isFreeDelivery && rawDeliveryFee > 0 ? calcOrderTotal : Number(d.order_total ?? calcOrderTotal),
 		} : null;
 		res.json({
 			...result,
