@@ -1929,7 +1929,8 @@ router.post('/wallet/recharge/init', async (req, res) => {
 		const refId = 'TOING' + Date.now().toString().slice(-8);
 		const {
 			upiUri,
-			qrUrl
+			qrUrl,
+			upiId
 		} = BharatPeService.buildUpiPayment(amount, refId);
 		if (!upiUri) {
 			return res.status(500).json({
@@ -1946,6 +1947,7 @@ router.post('/wallet/recharge/init', async (req, res) => {
 			success: true,
 			refId,
 			amount,
+			upiId,
 			upiUri,
 			qrUrl,
 			minDeposit,

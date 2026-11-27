@@ -2250,8 +2250,13 @@ async function initBharatPeRecharge() {
 			return;
 		}
 		activeRechargeRefId = data.refId;
+		state.activeBharatPeUpiId = data.upiId || '';
 		document.getElementById('qrPayAmountText').textContent = `₹${data.amount}`;
 		document.getElementById('bharatPeQrImg').src = data.qrUrl;
+		const copyBtn = document.getElementById('bharatPeCopyUpiBtn');
+		if (copyBtn) {
+			copyBtn.textContent = data.upiId ? `📋 Copy UPI ID (${data.upiId})` : '📋 Copy UPI ID';
+		}
 		const bpLink = document.getElementById('bharatPeUpiLink');
 		bpLink.href = '#';
 		bpLink.onclick = (e) => {
@@ -2279,6 +2284,16 @@ async function initBharatPeRecharge() {
 		setButtonLoading(btn, false);
 	}
 }
+function copyBharatPeUpiId() {
+	const upiId = state.activeBharatPeUpiId || '';
+	if (!upiId) return;
+	navigator.clipboard?.writeText(upiId).then(() => {
+		showToast(`📋 Copied: ${upiId}`);
+	}).catch(() => {
+		showToast('Copy failed', true);
+	});
+}
+
 async function verifyBharatPeRecharge(isAuto = false) {
 	const utr = (document.getElementById('inputManualUtr')?.value || '').trim();
 	if (!isAuto) setButtonLoading('btnVerifyBharatPe', true, 'Verifying...');

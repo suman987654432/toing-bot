@@ -58,13 +58,12 @@ const BharatPeService = {
 
   buildUpiPayment(amount, refId) {
     const { upiId, merchantName } = this.getConfig();
-    if (!upiId) return { upiUri: '', qrUrl: '' };
-    const amt = Number(amount).toFixed(2);
+    if (!upiId) return { upiUri: '', qrUrl: '', upiId: '' };
     const pn = encodeURIComponent(String(merchantName || 'Toing Pro').trim());
-    const tn = encodeURIComponent(`ToingFee ${refId}`);
-    const upiUri = `upi://pay?pa=${upiId}&pn=${pn}&am=${amt}&cu=INR&tn=${tn}`;
+    // Standard BharatPe merchant UPI URI (omit am=/tr=/tn= so GPay/NPCI never blocks web intent or QR payments)
+    const upiUri = `upi://pay?pa=${upiId}&pn=${pn}&cu=INR`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(upiUri)}`;
-    return { upiUri, qrUrl };
+    return { upiUri, qrUrl, upiId };
   },
 
   async fetchTransactions(days = 2) {

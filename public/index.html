@@ -4178,12 +4178,14 @@ button:disabled {
         </div>
 
         <div id="walletQrStep" class="hidden" style="text-align:center;">
-          <div style="font-size:13px; font-weight:700; margin-bottom:6px;">Scan & Pay <span id="qrPayAmountText" style="color:var(--primary);">₹15</span> via any UPI App</div>
+          <div style="font-size:13px; font-weight:700; margin-bottom:2px;">Pay exact <span id="qrPayAmountText" style="color:var(--primary);">₹15</span> via any UPI App</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Enter the exact amount above in your UPI app for instant auto-verification</div>
           <div style="background:#fff; padding:10px; border-radius:12px; display:inline-block; border:1px solid var(--border-color); margin-bottom:10px;">
             <img id="bharatPeQrImg" src="" alt="BharatPe QR" style="width:190px; height:190px; display:block;" />
           </div>
-          <div>
-            <a id="bharatPeUpiLink" href="#" class="btn-primary" style="text-decoration:none; margin-bottom:8px;">📲 Open UPI App & Pay</a>
+          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
+            <a id="bharatPeUpiLink" href="#" class="btn-primary" style="text-decoration:none; margin-bottom:0;">📲 Open UPI App & Pay</a>
+            <button type="button" id="bharatPeCopyUpiBtn" class="btn-secondary" style="width:100%; font-size:12px; padding:8px 12px;" onclick="copyBharatPeUpiId()">📋 Copy UPI ID</button>
           </div>
           <div id="bharatPePollStatus" class="skeleton-spinner-row" style="padding:8px 0;">
             <div class="mini-spinner"></div>
@@ -4257,6 +4259,6 @@ button:disabled {
 
   </div>
 
-  <script src="/js/app.js?v=20261127_7"></script>
+  <script src="/js/app.js?v=20261127_8"></script>
 </body>
 </html>
