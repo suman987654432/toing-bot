@@ -1752,6 +1752,7 @@ router.post('/orders/confirm', async (req, res) => {
 router.get('/orders/vpa-status', async (req, res) => {
 	try {
 		const {
+			orderId,
 			paasId,
 			paymentCode
 		} = req.query;
@@ -1761,6 +1762,18 @@ router.get('/orders/vpa-status', async (req, res) => {
 			userId
 		} = await getActiveCreds(getTgUserId(req));
 		const result = await SwiggyService.getVpaTxnStatus(paasId, paymentCode || 'UPIIntent', tid, token, userId);
+		if (result.status !== 'success' && orderId) {
+			try {
+				const sRes = await SwiggyService.getSingleOrder(orderId, tid, token);
+				const ord = sRes?.data?.data?.orders?.[0] || sRes?.data?.data || {};
+				const txnState = String(ord?.payment_info_v2?.payment_transactions?.[0]?.state || '').toUpperCase();
+				const paySt = String(ord?.payment_txn_status || '').toLowerCase();
+				const ordSt = String(ord?.order_status || '').toLowerCase();
+				if (txnState === 'STATE_SUCCESS' || paySt === 'success' || ['processing', 'confirmed', 'placed', 'delivered', 'picked_up', 'arrived'].includes(ordSt)) {
+					result.status = 'success';
+				}
+			} catch (e) {}
+		}
 		res.json(result);
 	} catch (err) {
 		res.status(500).json({

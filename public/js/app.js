@@ -2488,7 +2488,7 @@ async function checkAndConfirmPayment(orderId, paasId, paymentCode = 'UPIIntent'
 	const statusBox = document.getElementById('vpaLiveStatusBox');
 	try {
 		if (paasId) {
-			const stRes = await fetch(`/api/orders/vpa-status?paasId=${encodeURIComponent(paasId)}&paymentCode=${encodeURIComponent(paymentCode)}`);
+			const stRes = await fetch(`/api/orders/vpa-status?orderId=${encodeURIComponent(orderId)}&paasId=${encodeURIComponent(paasId)}&paymentCode=${encodeURIComponent(paymentCode)}`);
 			const stData = await stRes.json();
 			const st = String(stData.status || '').toLowerCase();
 			if (st === 'success') {
@@ -2522,7 +2522,31 @@ async function checkAndConfirmPayment(orderId, paasId, paymentCode = 'UPIIntent'
 				if (statusBox) statusBox.innerHTML = '<span style="color:#dc2626; font-weight:700;">❌ Payment failed or declined.</span>';
 				return;
 			} else if (!isAuto) {
-				showToast('Payment still pending. Please approve in UPI app.');
+				// Fallback: try direct /api/orders/confirm on manual "Check & Confirm" tap
+				const cfRes = await fetch('/api/orders/confirm', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						orderId
+					}),
+				});
+				const cfData = await cfRes.json();
+				if (cfData.success) {
+					if (paymentPollTimer) {
+						clearInterval(paymentPollTimer);
+						paymentPollTimer = null;
+					}
+					showToast(`🎉 Order #${orderId} Confirmed!`);
+					clearCartAfterOrder();
+					closeModal('modalPaymentFlow');
+					switchTab('orders');
+					fetchOrders();
+					openOrderDetails(orderId);
+					return;
+				}
+				showToast(cfData.error || 'Payment still pending. Please approve in UPI app.');
 			}
 		} else if (!isAuto) {
 			// No paasId returned; try direct order/confirm
