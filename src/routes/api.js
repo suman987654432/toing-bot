@@ -13,18 +13,38 @@ const {
 } = require('../models/Settings');
 const SwiggyService = require('../services/swiggyService');
 const BharatPeService = require('../services/bharatpeService');
-
 const pendingRecharges = new Map();
 const notifiedOrderIds = new Set();
 const chargedOrderIds = new Set();
-
 const SMALL_CAPS_MAP = {
-	a: 'ᴀ', b: 'ʙ', c: 'ᴄ', d: 'ᴅ', e: 'ᴇ', f: 'ꜰ', g: 'ɢ', h: 'ʜ', i: 'ɪ',
-	j: 'ᴊ', k: 'ᴋ', l: 'ʟ', m: 'ᴍ', n: 'ɴ', o: 'ᴏ', p: 'ᴘ', q: 'ǫ', r: 'ʀ',
-	s: 'ꜱ', t: 'ᴛ', u: 'ᴜ', v: 'ᴠ', w: 'ᴡ', x: 'x', y: 'ʏ', z: 'ᴢ'
+	a: 'ᴀ',
+	b: 'ʙ',
+	c: 'ᴄ',
+	d: 'ᴅ',
+	e: 'ᴇ',
+	f: 'ꜰ',
+	g: 'ɢ',
+	h: 'ʜ',
+	i: 'ɪ',
+	j: 'ᴊ',
+	k: 'ᴋ',
+	l: 'ʟ',
+	m: 'ᴍ',
+	n: 'ɴ',
+	o: 'ᴏ',
+	p: 'ᴘ',
+	q: 'ǫ',
+	r: 'ʀ',
+	s: 'ꜱ',
+	t: 'ᴛ',
+	u: 'ᴜ',
+	v: 'ᴠ',
+	w: 'ᴡ',
+	x: 'x',
+	y: 'ʏ',
+	z: 'ᴢ'
 };
 const toSmallCaps = (str = '') => String(str).toLowerCase().replace(/[a-z]/g, (c) => SMALL_CAPS_MAP[c] || c);
-
 async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, sessionOrder = null, addressDeleted = false) {
 	try {
 		const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -32,12 +52,10 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		if (!botToken || !/^\d+$/.test(chatId) || !orderId) return;
 		if (notifiedOrderIds.has(String(orderId))) return;
 		notifiedOrderIds.add(String(orderId));
-
 		const tid = activeAccount?.tid || '';
 		const token = activeAccount?.token || '';
 		let liveOrder = null;
 		let trackData = null;
-
 		if (tid || token) {
 			try {
 				const sRes = await SwiggyService.getSingleOrder(orderId, tid, token);
@@ -48,8 +66,9 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 				trackData = tRes.data?.data || tRes.data || null;
 			} catch (e) {}
 		}
-
-		const ord = liveOrder || sessionOrder || { order_id: orderId };
+		const ord = liveOrder || sessionOrder || {
+			order_id: orderId
+		};
 		const accountPhone = activeAccount?.phone || ord.phone_no || '';
 		const restaurantName = ord.restaurant_name || sessionOrder?.restaurant_name || '';
 		const rawPm = String(ord.payment_method || ord.payment_method_involved || sessionOrder?.payment_method || 'UPI');
@@ -57,14 +76,12 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		const rawStatus = trackData?.order_status || ord.order_status || 'Order Received!';
 		const statusText = toSmallCaps(rawStatus.replace(/_/g, ' '));
 		const trackUrl = trackData?.tracking_url || trackData?.share_url || ord.tracking_url || `https://www.swiggy.com/track-order/${orderId}`;
-
 		const items = ord.order_items || ord.items || sessionOrder?.items || [];
 		const itemLines = items.map((it) => {
 			const qty = it.quantity || 1;
 			const price = it.sub_total ?? it.item_total ?? it.final_price ?? (it.cost ? Math.round((Number(it.cost) / 100) * 100) / 100 : '');
 			return `• ${it.name} × ${qty}${price !== '' ? ` — ₹${price}` : ''}`;
 		}).join('\n');
-
 		const charges = ord.charges || {};
 		const total = Number(ord.order_total ?? ord.net_total ?? sessionOrder?.order_total ?? 0);
 		const itemTotal = Number(ord.item_total ?? items.reduce((s, it) => s + Number(it.sub_total ?? it.item_total ?? (it.cost ? it.cost / 100 : 0)), 0) ?? total);
@@ -73,52 +90,31 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		const taxes = Math.round((Number(ord.order_tax ?? charges['GST'] ?? 0) + packingFee) * 100) / 100;
 		const couponDisc = Number(ord.coupon_discount || 0);
 		const freeCashDisc = Math.max(0, Number(ord.order_discount || 0) + Number(ord.trade_discount || 0) + Number(ord.payment_offer_instant_discount || 0));
-
 		const da = ord.delivery_address;
-		const addrStr = (da && typeof da === 'object')
-			? [da.flat_no, da.landmark, da.address || da.address_line1, da.city].filter(Boolean).join(', ')
-			: (da || sessionOrder?.delivery_address || '');
+		const addrStr = (da && typeof da === 'object') ? [da.flat_no, da.landmark, da.address || da.address_line1, da.city].filter(Boolean).join(', ') : (da || sessionOrder?.delivery_address || '');
 		const recName = (da && typeof da === 'object' ? da.name : '') || sessionOrder?.receiver_name || activeAccount?.userName || '';
 		const recPhone = (da && typeof da === 'object' ? da.mobile : '') || sessionOrder?.receiver_phone || accountPhone || '';
-
-		const billLines = [
-			`• ɪᴛᴇᴍ ᴛᴏᴛᴀʟ: ${itemTotal}`,
-			`• ᴅᴇʟɪᴠᴇʀʏ ꜰᴇᴇ: ${deliveryFee === 0 ? 'FREE' : deliveryFee}`,
-		];
+		const billLines = [`• ɪᴛᴇᴍ ᴛᴏᴛᴀʟ: ${itemTotal}`, `• ᴅᴇʟɪᴠᴇʀʏ ꜰᴇᴇ: ${deliveryFee === 0 ? 'FREE' : deliveryFee}`, ];
 		if (freeCashDisc > 0) billLines.push(`• ꜰʀᴇᴇ ᴄᴀꜱʜ: −${freeCashDisc.toFixed(2)}`);
 		if (couponDisc > 0) billLines.push(`• ᴄᴏᴜᴘᴏɴ ᴅɪꜱᴄᴏᴜɴᴛ: −${couponDisc.toFixed(2)}`);
 		billLines.push(`• ɢᴏᴠᴇʀɴᴍᴇɴᴛ ᴛᴀxᴇꜱ: ${taxes}`);
 		billLines.push(`• ᴛᴏ ᴘᴀʏ: ${total}`);
-
-		const lines = [
-			`✅ ʏᴏᴜʀ ᴏʀᴅᴇʀ ɪꜱ ᴘʟᴀᴄᴇᴅ!`,
-			``,
-			accountPhone ? `📱 ᴀᴄᴄᴏᴜɴᴛ: ${accountPhone}` : null,
-			`🗑 ᴀᴅᴅʀᴇꜱꜱ ᴅᴇʟᴇᴛᴇᴅ: ${addressDeleted ? 'ʏᴇꜱ' : 'ɴᴏ'}`,
-			``,
-			restaurantName ? `🍽 ${toSmallCaps(restaurantName)}` : null,
-			`🆔 ᴏʀᴅᴇʀ ɪᴅ: ${orderId}`,
-			`💳 ᴘᴀʏᴍᴇɴᴛ: ${payText}`,
-			`📍 ꜱᴛᴀᴛᴜꜱ: ${statusText}`,
-			`🔗 ᴛʀᴀᴄᴋɪɴɢ: ${trackUrl}`,
-			itemLines ? `ɪᴛᴇᴍꜱ\n${itemLines}` : null,
-			``,
-			`ʙɪʟʟ ᴅᴇᴛᴀɪʟꜱ`,
-			billLines.join('\n'),
-			``,
-			`📍 ᴅᴇʟɪᴠᴇʀʏ ᴀᴅᴅʀᴇꜱꜱ`,
+		const lines = [`✅ ʏᴏᴜʀ ᴏʀᴅᴇʀ ɪꜱ ᴘʟᴀᴄᴇᴅ!`, ``,
+			accountPhone ? `📱 ᴀᴄᴄᴏᴜɴᴛ: ${accountPhone}` : null, `🗑 ᴀᴅᴅʀᴇꜱꜱ ᴅᴇʟᴇᴛᴇᴅ: ${addressDeleted ? 'ʏᴇꜱ' : 'ɴᴏ'}`, ``,
+			restaurantName ? `🍽 ${toSmallCaps(restaurantName)}` : null, `🆔 ᴏʀᴅᴇʀ ɪᴅ: ${orderId}`, `💳 ᴘᴀʏᴍᴇɴᴛ: ${payText}`, `📍 ꜱᴛᴀᴛᴜꜱ: ${statusText}`, `🔗 ᴛʀᴀᴄᴋɪɴɢ: ${trackUrl}`,
+			itemLines ? `ɪᴛᴇᴍꜱ\n${itemLines}` : null, ``, `ʙɪʟʟ ᴅᴇᴛᴀɪʟꜱ`,
+			billLines.join('\n'), ``, `📍 ᴅᴇʟɪᴠᴇʀʏ ᴀᴅᴅʀᴇꜱꜱ`,
 			addrStr ? `• ᴀᴅᴅʀᴇꜱꜱ: ${addrStr}` : null,
 			recName ? `• ʀᴇᴄᴇɪᴠᴇʀ: ${recName}` : null,
-			recPhone ? `• ᴘʜᴏɴᴇ: ${recPhone}` : null,
-			``,
-			`#toing`
+			recPhone ? `• ᴘʜᴏɴᴇ: ${recPhone}` : null, ``, `#toing`
 		].filter((x) => x !== null);
-
 		await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
 			chat_id: chatId,
 			text: lines.join('\n'),
 			disable_web_page_preview: true,
-		}, { timeout: 8000 });
+		}, {
+			timeout: 8000
+		});
 	} catch (e) {
 		console.error('[Telegram Order Notify] Error:', e.message);
 	}
@@ -152,7 +148,10 @@ const geocodeAddress = async (queries = []) => {
 		// 1. Try Photon (OSM-based, no strict cloud IP rate-limit)
 		try {
 			const pResp = await axios.get('https://photon.komoot.io/api/', {
-				params: { q, limit: 1 },
+				params: {
+					q,
+					limit: 1
+				},
 				timeout: 4500,
 			});
 			const feat = pResp.data?.features?.[0];
@@ -170,12 +169,18 @@ const geocodeAddress = async (queries = []) => {
 				}
 			}
 		} catch (e) {}
-
 		// 2. Fallback to Nominatim
 		try {
 			const resp = await axios.get('https://nominatim.openstreetmap.org/search', {
-				params: { format: 'json', limit: 1, countrycodes: 'in', q },
-				headers: { 'User-Agent': 'ToingProOrderApp/1.0 (https://github.com)' },
+				params: {
+					format: 'json',
+					limit: 1,
+					countrycodes: 'in',
+					q
+				},
+				headers: {
+					'User-Agent': 'ToingProOrderApp/1.0 (https://github.com)'
+				},
 				timeout: 4500,
 			});
 			const hit = resp.data?.[0];
@@ -488,6 +493,94 @@ router.delete('/accounts/:id', async (req, res) => {
 /* =========================================
    2. ADDRESSES & DELIVERY LOCATION
    ========================================= */
+// Live area search suggestions (Photon + Nominatim fallback)
+router.get('/addresses/suggest', async (req, res) => {
+	const q = String(req.query.q || '').trim();
+	if (q.length < 3) return res.json({
+		success: true,
+		suggestions: []
+	});
+	try {
+		const pResp = await axios.get('https://photon.komoot.io/api/', {
+			params: {
+				q: `${q}, India`,
+				limit: 5
+			},
+			timeout: 4500,
+		});
+		const feats = pResp.data?.features || [];
+		if (feats.length > 0) {
+			const suggestions = feats.map((f) => {
+				const p = f.properties || {};
+				const coords = f.geometry?.coordinates || [];
+				const area = [p.name, p.street, p.district || p.locality].filter(Boolean).slice(0, 2).join(', ');
+				const city = p.city || p.district || p.state || '';
+				const display = [p.name, p.street, p.district, p.city, p.state, p.postcode].filter(Boolean).join(', ');
+				return {
+					area: area || city || q,
+					city,
+					display: display || area || q,
+					lat: parseFloat(coords[1]),
+					lng: parseFloat(coords[0]),
+				};
+			}).filter((s) => s.lat && s.lng);
+			if (suggestions.length > 0) return res.json({
+				success: true,
+				suggestions
+			});
+		}
+	} catch (e) {}
+	try {
+		const nResp = await axios.get('https://nominatim.openstreetmap.org/search', {
+			params: {
+				format: 'json',
+				countrycodes: 'in',
+				limit: 5,
+				q
+			},
+			headers: {
+				'User-Agent': 'ToingProOrderApp/1.0 (https://github.com)'
+			},
+			timeout: 4500,
+		});
+		const suggestions = (nResp.data || []).map((it) => {
+			const parts = String(it.display_name || '').split(',').map((s) => s.trim());
+			return {
+				area: parts.slice(0, 2).join(', '),
+				city: parts.find((p) => /patna|bhopal|varanasi|delhi|mumbai|kolkata|lucknow|jaipur|pune|bengaluru|hyderabad/i.test(p)) || parts[parts.length - 4] || '',
+				display: it.display_name,
+				lat: parseFloat(it.lat),
+				lng: parseFloat(it.lon),
+			};
+		}).filter((s) => s.lat && s.lng);
+		return res.json({
+			success: true,
+			suggestions
+		});
+	} catch (e) {}
+	res.json({
+		success: true,
+		suggestions: []
+	});
+});
+// Reverse geocode GPS coordinates to area + city
+router.get('/addresses/reverse-geocode', async (req, res) => {
+	const lat = parseFloat(req.query.lat);
+	const lng = parseFloat(req.query.lng);
+	if (!lat || !lng) return res.status(400).json({
+		success: false,
+		error: 'Invalid coordinates'
+	});
+	const rev = await reverseGeocodeCoords(lat, lng);
+	res.json({
+		success: true,
+		lat,
+		lng,
+		area: rev?.area || '',
+		city: rev?.city || '',
+		display: rev?.display || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+	});
+});
 router.get('/addresses', async (req, res) => {
 	try {
 		const active = await AccountRepo.getActive(getTgUserId(req));
@@ -526,24 +619,6 @@ router.get('/addresses', async (req, res) => {
 					await AccountRepo.saveOrUpdate(active);
 				}
 			} catch (err) {}
-		}
-		// Default fallback address if account has none (persist to DB so Edit/Select works)
-		if (addresses.length === 0) {
-			addresses = [{
-				id: 'addr_varanasi_dlw',
-				name: active.userName || 'batman',
-				phone: `+91 ${active.phone}`,
-				address_line1: 'Vashno Nagar Colony, Gokul Nagar, DLW Colony, Chitaipur',
-				address_line2: 'DLW Colony',
-				city: 'Varanasi',
-				lat: 25.2730006,
-				lng: 82.9639115,
-				tag: 'HOME',
-				isAccountAddress: true,
-			}];
-			active.addresses = addresses;
-			if (!active.selectedAddressId) active.selectedAddressId = 'addr_varanasi_dlw';
-			await AccountRepo.saveOrUpdate(active).catch(() => {});
 		}
 		res.json({
 			success: true,
@@ -587,8 +662,15 @@ router.post('/addresses/select', async (req, res) => {
 const reverseGeocodeCoords = async (lat, lng) => {
 	try {
 		const resp = await axios.get('https://nominatim.openstreetmap.org/reverse', {
-			params: { format: 'json', lat, lon: lng, addressdetails: 1 },
-			headers: { 'User-Agent': 'ToingProApp/1.0' },
+			params: {
+				format: 'json',
+				lat,
+				lon: lng,
+				addressdetails: 1
+			},
+			headers: {
+				'User-Agent': 'ToingProApp/1.0'
+			},
 			timeout: 5000,
 		});
 		const d = resp.data || {};
@@ -602,24 +684,27 @@ const reverseGeocodeCoords = async (lat, lng) => {
 		return null;
 	}
 };
-
 // Add Address by Swiggy Link / Google Maps Link / Address Text
 router.post('/addresses/add-link', async (req, res) => {
 	try {
-		const { link, name } = req.body;
+		const {
+			link,
+			name
+		} = req.body;
 		const rawInput = String(link || '').trim();
 		const active = await AccountRepo.getActive(getTgUserId(req));
 		if (!active) {
-			return res.status(400).json({ success: false, error: 'No active account' });
+			return res.status(400).json({
+				success: false,
+				error: 'No active account'
+			});
 		}
-
 		let lat = null;
 		let lng = null;
 		let resolvedName = name || '';
 		let resolvedText = '';
 		let resolvedArea = '';
 		let resolvedCity = '';
-
 		// 1. Direct URL query params (?lat=...&lng=...) or Google Maps @lat,lng
 		const coordMatch = rawInput.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || rawInput.match(/[?&](?:q|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/);
 		if (coordMatch) {
@@ -631,13 +716,14 @@ router.post('/addresses/add-link', async (req, res) => {
 			if (urlObj.searchParams.get('lat')) lat = parseFloat(urlObj.searchParams.get('lat'));
 			if (urlObj.searchParams.get('lng')) lng = parseFloat(urlObj.searchParams.get('lng'));
 		} catch (e) {}
-
 		// 2. If Swiggy onelink / short URL, follow redirect or inspect inner URL
 		if (!lat && /^https?:\/\//i.test(rawInput)) {
 			try {
 				const r = await axios.get(rawInput, {
 					maxRedirects: 5,
-					headers: { 'user-agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36' },
+					headers: {
+						'user-agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36'
+					},
 					timeout: 6000,
 					validateStatus: () => true,
 				});
@@ -653,7 +739,6 @@ router.post('/addresses/add-link', async (req, res) => {
 					resolvedName = decodeURIComponent(ofoMatch[1]).trim();
 				}
 			} catch (e) {}
-
 			if (!lat || !lng) {
 				return res.status(400).json({
 					success: false,
@@ -661,7 +746,6 @@ router.post('/addresses/add-link', async (req, res) => {
 				});
 			}
 		}
-
 		// 3. Reverse geocode if we got lat/lng from link, or forward geocode if user pasted plain address text
 		if (lat && lng) {
 			const rev = await reverseGeocodeCoords(lat, lng);
@@ -678,7 +762,6 @@ router.post('/addresses/add-link', async (req, res) => {
 				resolvedText = geo.display || rawInput;
 			}
 		}
-
 		const userCity = resolvedCity || active.addresses?.[0]?.city || 'Patna';
 		const displayAddress = resolvedText || rawInput;
 		const finalLat = lat || active.addresses?.[0]?.lat || 25.6074;
@@ -713,12 +796,18 @@ router.post('/addresses/add-link', async (req, res) => {
 			tag: 'OTHER',
 			isAccountAddress: true,
 		};
-
 		await AccountRepo.addAddress(active._id, newAddress);
 		await AccountRepo.setSelectedAddress(active._id, newAddress.id);
-		res.json({ success: true, message: 'Address added successfully!', address: newAddress });
+		res.json({
+			success: true,
+			message: 'Address added successfully!',
+			address: newAddress
+		});
 	} catch (err) {
-		res.status(500).json({ success: false, error: err.message });
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
 	}
 });
 // Add Address Manually
@@ -804,14 +893,25 @@ router.post('/addresses/add-manual', async (req, res) => {
 // Update Address
 router.put('/addresses/:id', async (req, res) => {
 	try {
-		const { name, phone, addressLine1, addressLine2, city, tag, lat, lng } = req.body;
+		const {
+			name,
+			phone,
+			addressLine1,
+			addressLine2,
+			city,
+			tag,
+			lat,
+			lng
+		} = req.body;
 		const active = await AccountRepo.getActive(getTgUserId(req));
 		if (!active) {
-			return res.status(400).json({ success: false, error: 'No active account' });
+			return res.status(400).json({
+				success: false,
+				error: 'No active account'
+			});
 		}
 		const existing = (active.addresses || []).find((a) => String(a.id || a._id) === String(req.params.id));
 		const base = existing || {};
-
 		const targetCity = city || base.city || 'Patna';
 		const updatedFields = {
 			id: String(req.params.id || base.id || ('addr_' + Date.now())),
@@ -825,7 +925,6 @@ router.put('/addresses/:id', async (req, res) => {
 			city: targetCity,
 			tag: tag || base.tag || 'HOME',
 		};
-
 		const reqLat = parseFloat(lat);
 		const reqLng = parseFloat(lng);
 		if (reqLat && reqLng) {
@@ -835,8 +934,7 @@ router.put('/addresses/:id', async (req, res) => {
 			const geo = await geocodeAddress([
 				[updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
 				[updatedFields.address_line1, updatedFields.address_line2, targetCity, 'India'].filter(Boolean).join(', '),
-				[updatedFields.address_line1, targetCity, 'India'].filter(Boolean).join(', '),
-				`${targetCity}, India`,
+				[updatedFields.address_line1, targetCity, 'India'].filter(Boolean).join(', '), `${targetCity}, India`,
 			]);
 			if (geo) {
 				updatedFields.lat = geo.lat;
@@ -846,7 +944,6 @@ router.put('/addresses/:id', async (req, res) => {
 				updatedFields.lng = base.lng || 85.1587;
 			}
 		}
-
 		// Sync edited address to Swiggy so it gets a real Swiggy address_id (for cart delivery & order placement)
 		if (active.tid && active.token) {
 			const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
@@ -867,7 +964,6 @@ router.put('/addresses/:id', async (req, res) => {
 				updatedFields.id = swAdd.addressId;
 			}
 		}
-
 		if (existing) {
 			await AccountRepo.updateAddress(active._id, req.params.id, updatedFields);
 			if (String(active.selectedAddressId) === String(req.params.id) && updatedFields.id !== req.params.id) {
@@ -877,9 +973,19 @@ router.put('/addresses/:id', async (req, res) => {
 			await AccountRepo.addAddress(active._id, updatedFields);
 			await AccountRepo.setSelectedAddress(active._id, updatedFields.id);
 		}
-		res.json({ success: true, message: 'Address updated successfully!', address: { ...base, ...updatedFields } });
+		res.json({
+			success: true,
+			message: 'Address updated successfully!',
+			address: {
+				...base,
+				...updatedFields
+			}
+		});
 	} catch (err) {
-		res.status(500).json({ success: false, error: err.message });
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
 	}
 });
 // Delete Address
@@ -1044,7 +1150,6 @@ router.post('/cart/update', async (req, res) => {
 			token,
 			userId
 		} = await getActiveCreds(getTgUserId(req));
-
 		let cartPayload = req.body;
 		if (!cartPayload.cartItems && Array.isArray(req.body.items)) {
 			const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0] || {};
@@ -1055,8 +1160,13 @@ router.post('/cart/update', async (req, res) => {
 			cartPayload = {
 				address_nudge_check: false,
 				batch_opt_in: false,
-				cartLatLong: { lat, lng },
-				cart_saved_preferences: { is_cutlery_opted: 'false' },
+				cartLatLong: {
+					lat,
+					lng
+				},
+				cart_saved_preferences: {
+					is_cutlery_opted: 'false'
+				},
 				cutleryComments: String(req.body.cookingRequest || ''),
 				address_id: addressId,
 				restaurantId: String(req.body.restaurantId || ''),
@@ -1069,31 +1179,27 @@ router.post('/cart/update', async (req, res) => {
 				})),
 			};
 		}
-
 		const result = await SwiggyService.updateCart(cartPayload, tid, token, userId);
 		const d = result.data?.data || {};
 		const deliveryRow = (d.rendering_details || []).find(
-			(r) =>
-				/delivery fee/i.test(String(r.display_text || '')) ||
-				['delivery_charges', 'free_non_super_delivery_exclusive', 'delivery_fee'].includes(String(r.key || ''))
-		);
+			(r) => /delivery fee/i.test(String(r.display_text || '')) || ['delivery_charges', 'free_non_super_delivery_exclusive', 'delivery_fee'].includes(String(r.key || '')));
 		const rawDelivLabel = String(deliveryRow?.display_text || '').replace(/^"+|"+$/g, '').trim();
 		const itemTotalRow = (d.rendering_details || []).find((r) => r.key === 'item_total');
-		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined)
-			? {
-				itemTotal: Number(d.cart_subtotal ?? d.item_total ?? 0),
-				strikeOffItemTotal: itemTotalRow?.intermediateText || '',
-				deliveryFee: Number(d.delivery_charges ?? 0),
-				deliveryLabel: rawDelivLabel,
-				deliveryStrikeOff: deliveryRow?.intermediateText || '',
-				taxes: Number(d.total_tax ?? d.taxes?.GST ?? 0),
-				packingCharges: Number(d.total_packing_charges ?? 0),
-				couponDiscount: Number(d.coupon_discount_total ?? 0),
-				orderTotal: Number(d.order_total ?? 0),
-			}
-			: null;
-
-		res.json({ ...result, bill });
+		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
+			itemTotal: Number(d.cart_subtotal ?? d.item_total ?? 0),
+			strikeOffItemTotal: itemTotalRow?.intermediateText || '',
+			deliveryFee: Number(d.delivery_charges ?? 0),
+			deliveryLabel: rawDelivLabel,
+			deliveryStrikeOff: deliveryRow?.intermediateText || '',
+			taxes: Number(d.total_tax ?? d.taxes?.GST ?? 0),
+			packingCharges: Number(d.total_packing_charges ?? 0),
+			couponDiscount: Number(d.coupon_discount_total ?? 0),
+			orderTotal: Number(d.order_total ?? 0),
+		} : null;
+		res.json({
+			...result,
+			bill
+		});
 	} catch (err) {
 		res.status(500).json({
 			success: false,
@@ -1201,462 +1307,452 @@ router.post('/coupons/remove', async (req, res) => {
    5. ORDERS & CHECKOUT (DIRECT LIVE SWIGGY APIS)
    ========================================= */
 router.get('/orders', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const {
+			active,
+			tid,
+			token
+		} = await getActiveCreds(tgUserId);
+		const liveOrdersList = [];
+		// 1. Fetch live orders from Swiggy account orders API (protobuf parsed)
+		if (tid || token) {
+			try {
+				const selAddr = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+				const fallbackAddrStr = selAddr ? [selAddr.flat_no, selAddr.landmark, selAddr.address, selAddr.address_line1, selAddr.city].filter(Boolean).join(', ') : 'Delivery Address';
+				const oLat = selAddr?.lat || 25.6074;
+				const oLng = selAddr?.lng || 85.1587;
+				const sOrders = await SwiggyService.getOrders(10, tid, token, oLat, oLng);
+				const pastOrders = sOrders.orders || sOrders.data?.data?.orders || [];
+				for (const ord of pastOrders) {
+					liveOrdersList.push({
+						order_id: String(ord.order_id),
+						restaurant_name: ord.restaurant_name || 'Restaurant',
+						order_total: String(ord.order_total || '0'),
+						order_status: (ord.order_status || 'DELIVERED').toUpperCase(),
+						delivery_address: ord.delivery_address?.address || ord.delivery_address || fallbackAddrStr,
+						order_time: ord.order_time || 'Past Order',
+						items: (ord.items || ord.order_items || []).map((it) => ({
+							name: it.name,
+							quantity: it.quantity || 1,
+							cost: it.cost || (it.sub_total || it.item_total || it.final_price || 0) * 100,
+						})),
+					});
+				}
+			} catch (e) {}
+		}
+		// Combine confirmed session orders with live orders (skip unpaid PAYMENT_PENDING orders)
+		const userOrders = getUserPlacedOrders(tgUserId).filter((o) => o.order_status !== 'PAYMENT_PENDING');
+		const seen = new Set(userOrders.map((o) => String(o.order_id)));
+		const allOrders = [...userOrders, ...liveOrdersList.filter((o) => !seen.has(String(o.order_id)))];
+		res.json({
+			success: true,
+			data: {
+				data: {
+					orders: allOrders
+				}
+			}
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.get('/orders/:id', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const {
+			tid,
+			token
+		} = await getActiveCreds(tgUserId);
+		const foundSessionOrder = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(req.params.id));
+		let liveOrder = null;
+		let trackData = null;
+		if (tid || token) {
+			try {
+				const sRes = await SwiggyService.getSingleOrder(req.params.id, tid, token);
+				liveOrder = sRes.data?.data?.orders?.[0] || sRes.data?.data || null;
+			} catch (e) {}
+			try {
+				const tRes = await SwiggyService.getTrackCard(req.params.id, tid, token);
+				trackData = tRes.data || null;
+			} catch (e) {}
+		}
+		res.json({
+			success: true,
+			order: foundSessionOrder || liveOrder || {
+				order_id: req.params.id
+			},
+			liveOrder,
+			trackData,
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.post('/orders/place', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const {
+			items,
+			restaurantId,
+			restaurantName,
+			total,
+			address,
+			couponCode,
+			paymentMethod,
+			upiVpa,
+			cookingRequest
+		} = req.body;
+		const {
+			active,
+			tid,
+			token,
+			userId
+		} = await getActiveCreds(tgUserId);
+		if (!tid || !token) {
+			return res.status(401).json({
+				success: false,
+				error: 'Please login to an account first before placing a real order.',
+			});
+		}
+		const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+		if (!selected) {
+			return res.status(400).json({
+				success: false,
+				error: 'Please select a delivery address first.',
+			});
+		}
+		// Pre-check wallet balance (actual deduction happens ONLY after payment confirmation!)
+		const cfg = await SettingsRepo.get();
+		const currentFee = cfg.orderFee;
+		const currentMinDep = cfg.minDeposit;
+		if (currentFee > 0) {
+			const wallet = await WalletRepo.getWallet(tgUserId);
+			if (Number(wallet?.balance || 0) < currentFee) {
+				return res.status(402).json({
+					success: false,
+					code: 'INSUFFICIENT_WALLET_BALANCE',
+					error: `₹${currentFee} order fee required! Minimum ₹${currentMinDep} deposit needed in your wallet.`,
+				});
+			}
+		}
+		const lat = selected.lat || 25.6074;
+		const lng = selected.lng || 85.1587;
+		let addressId = String(selected.id || active?.selectedAddressId || '');
+		const deliveryAddress = address || [selected.flat_no, selected.address, selected.address_line1].filter(Boolean).join(', ') || 'Delivery Address';
+		// Swiggy /api/v3/order/place rejects local "addr_*" IDs; resolve a real Swiggy address_id if needed
+		if (!addressId || addressId.startsWith('addr_')) {
+			try {
+				const swiggyAddrRes = await SwiggyService.getAddresses(tid, token, userId);
+				const swiggyAddrs = swiggyAddrRes?.addresses || [];
+				if (swiggyAddrs.length > 0) {
+					const realMatch = swiggyAddrs.find((a) => a.id && !String(a.id).startsWith('addr_'));
+					if (realMatch) addressId = String(realMatch.id);
+				}
+			} catch (e) {}
+		}
+		// Step 1: Sync cart with Swiggy Payments (/api/v3/update-cart)
+		const cartPayload = {
+			address_nudge_check: false,
+			batch_opt_in: false,
+			cartLatLong: {
+				lat: Number(lat),
+				lng: Number(lng)
+			},
+			cart_saved_preferences: {
+				is_cutlery_opted: 'false'
+			},
+			cutleryComments: String(cookingRequest || ''),
+			address_id: String(addressId),
+			restaurantId: String(restaurantId || ''),
+			cartItems: (items || []).map((i) => ({
+				menu_item_id: String(i.baseId || i.id),
+				quantity: Number(i.quantity || 1),
+				addons: i.addons || [],
+				variants: i.variants || [],
+				cost: Math.round(Number(i.price || 0) * 100),
+			})),
+		};
+		const updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId);
+		if (!updateRes.success || (updateRes.data && updateRes.data.statusCode && updateRes.data.statusCode !== 0)) {
+			return res.status(400).json({
+				success: false,
+				error: updateRes.data?.statusMessage || updateRes.error?.statusMessage || (typeof updateRes.error === 'string' ? updateRes.error : 'Swiggy cart sync failed.'),
+				details: updateRes.data || updateRes.error,
+			});
+		}
+		let swiggyOrderTotal = Number(updateRes.data?.data?.order_total ?? 0);
+		// Step 2: Apply coupon on Swiggy if provided
+		if (couponCode) {
+			const couponRes = await SwiggyService.applyCoupon(couponCode, tid, token, userId);
+			if (couponRes?.data?.data?.order_total !== undefined) {
+				swiggyOrderTotal = Number(couponRes.data.data.order_total);
+			}
+		}
+		const finalTxAmount = swiggyOrderTotal > 0 ? swiggyOrderTotal : total;
+		// Step 3: Place order on Swiggy Payments (/api/v3/order/place)
+		const placeRes = await SwiggyService.placeOrder({
+			paymentMethod: paymentMethod || 'UPIIntent',
+			upiVpa: upiVpa || '',
+			transaction_amount: finalTxAmount,
+			addressId,
+			lat,
+			lng,
+			cookingRequest: cookingRequest || '',
+		}, tid, token, userId);
+		if (!placeRes.success || !placeRes.orderId) {
+			return res.status(400).json({
+				success: false,
+				error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || 'Swiggy rejected order placement.',
+				details: placeRes.data || placeRes.error,
+			});
+		}
+		const newOrder = {
+			order_id: String(placeRes.orderId),
+			paas_id: String(placeRes.paasId || ''),
+			restaurant_name: restaurantName || 'Toing Pro Restaurant',
+			order_total: String(placeRes.amount || total || '0'),
+			order_status: 'PAYMENT_PENDING',
+			delivery_address: deliveryAddress,
+			receiver_name: selected.name || active?.userName || '',
+			receiver_phone: selected.mobile || active?.phone || '',
+			order_time: 'Just now',
+			payment_method: upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent'),
+			items: (items || []).map((i) => ({
+				name: i.name,
+				quantity: i.quantity || 1,
+				cost: Math.round(Number(i.price || 0) * 100),
+			})),
+			coupon_applied: couponCode || '',
+		};
+		getUserPlacedOrders(tgUserId).unshift(newOrder);
+		const pmCheck = String(upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent')).toUpperCase();
+		if (pmCheck === 'CASH' || pmCheck === 'COD') {
+			newOrder.order_status = 'CONFIRMED';
+			if (!chargedOrderIds.has(newOrder.order_id)) {
+				chargedOrderIds.add(newOrder.order_id);
+				await WalletRepo.deductOrderFee(tgUserId, currentFee, newOrder.order_id);
+			}
+			sendOrderPlacedTelegram(tgUserId, newOrder.order_id, active, newOrder, false);
+		}
+		res.json({
+			success: true,
+			order_id: newOrder.order_id,
+			paas_id: newOrder.paas_id,
+			amount: newOrder.order_total,
+			upi_uri: placeRes.upiUri || '',
+			payment_code: upiVpa ? 'UPI' : 'UPIIntent',
+			message: 'Order initiated! Complete UPI payment to confirm.',
+			order: newOrder,
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.post('/orders/confirm', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const {
+			orderId
+		} = req.body;
+		const {
+			active,
+			tid,
+			token,
+			userId
+		} = await getActiveCreds(tgUserId);
+		const result = await SwiggyService.confirmOrder(orderId, tid, token, userId);
+		if (result.success) {
+			if (!chargedOrderIds.has(String(orderId))) {
+				chargedOrderIds.add(String(orderId));
+				const cfg = await SettingsRepo.get();
+				await WalletRepo.deductOrderFee(tgUserId, cfg.orderFee, String(orderId));
+			}
+			const ord = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(orderId));
+			if (ord) ord.order_status = 'CONFIRMED';
+			sendOrderPlacedTelegram(tgUserId, orderId, active, ord || null, false);
+		}
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.get('/orders/vpa-status', async (req, res) => {
+	try {
+		const {
+			paasId,
+			paymentCode
+		} = req.query;
+		const {
+			tid,
+			token,
+			userId
+		} = await getActiveCreds(getTgUserId(req));
+		const result = await SwiggyService.getVpaTxnStatus(paasId, paymentCode || 'UPIIntent', tid, token, userId);
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+/* =========================================
+   6. AUTOMATION TOOLS (DIRECT LIVE SWIGGY APIS)
+   ========================================= */
+router.post('/tools/claim-refer', async (req, res) => {
+	try {
+		const {
+			referralCode
+		} = req.body;
+		const {
+			tid,
+			token
+		} = await getActiveCreds(getTgUserId(req));
+		const result = await SwiggyService.claimReferral(referralCode, tid, token);
+		res.json({
+			success: true,
+			message: '₹50 Referral Bonus Claimed Successfully!',
+			data: result.data || result,
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.post('/tools/bulk-claim', async (req, res) => {
+	try {
+		const {
+			referralCode
+		} = req.body;
+		const accounts = await AccountRepo.getAll(getTgUserId(req));
+		const results = [];
+		let successCount = 0;
+		for (const acc of accounts) {
+			if (acc.tid && acc.token) {
 				try {
-					const tgUserId = getTgUserId(req);
-					const {
-						active,
-						tid,
-						token
-					} = await getActiveCreds(tgUserId);
-					const liveOrdersList = [];
-					// 1. Fetch live orders from Swiggy account orders API (protobuf parsed)
-					if (tid || token) {
-						try {
-							const selAddr = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
-							const fallbackAddrStr = selAddr ? [selAddr.flat_no, selAddr.landmark, selAddr.address, selAddr.address_line1, selAddr.city].filter(Boolean).join(', ') : 'Delivery Address';
-							const oLat = selAddr?.lat || 25.6074;
-							const oLng = selAddr?.lng || 85.1587;
-							const sOrders = await SwiggyService.getOrders(10, tid, token, oLat, oLng);
-							const pastOrders = sOrders.orders || sOrders.data?.data?.orders || [];
-							for (const ord of pastOrders) {
-								liveOrdersList.push({
-									order_id: String(ord.order_id),
-									restaurant_name: ord.restaurant_name || 'Restaurant',
-									order_total: String(ord.order_total || '0'),
-									order_status: (ord.order_status || 'DELIVERED').toUpperCase(),
-									delivery_address: ord.delivery_address?.address || ord.delivery_address || fallbackAddrStr,
-									order_time: ord.order_time || 'Past Order',
-									items: (ord.items || ord.order_items || []).map((it) => ({
-										name: it.name,
-										quantity: it.quantity || 1,
-										cost: it.cost || (it.sub_total || it.item_total || it.final_price || 0) * 100,
-									})),
-								});
-							}
-						} catch (e) {}
-					}
-								// Combine confirmed session orders with live orders (skip unpaid PAYMENT_PENDING orders)
-								const userOrders = getUserPlacedOrders(tgUserId).filter((o) => o.order_status !== 'PAYMENT_PENDING');
-								const seen = new Set(userOrders.map((o) => String(o.order_id)));
-								const allOrders = [...userOrders, ...liveOrdersList.filter((o) => !seen.has(String(o.order_id)))];
-								res.json({
-									success: true,
-									data: {
-										data: {
-											orders: allOrders
-										}
-									}
-								});
-							} catch (err) {
-								res.status(500).json({
-									success: false,
-									error: err.message
-								});
-							}
-						});
-					router.get('/orders/:id', async (req, res) => {
-						try {
-							const tgUserId = getTgUserId(req);
-							const {
-								tid,
-								token
-							} = await getActiveCreds(tgUserId);
-							const foundSessionOrder = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(req.params.id));
-							let liveOrder = null;
-							let trackData = null;
-							if (tid || token) {
-								try {
-									const sRes = await SwiggyService.getSingleOrder(req.params.id, tid, token);
-									liveOrder = sRes.data?.data?.orders?.[0] || sRes.data?.data || null;
-								} catch (e) {}
-								try {
-									const tRes = await SwiggyService.getTrackCard(req.params.id, tid, token);
-									trackData = tRes.data || null;
-								} catch (e) {}
-							}
-							res.json({
-								success: true,
-								order: foundSessionOrder || liveOrder || {
-									order_id: req.params.id
-								},
-								liveOrder,
-								trackData,
-							});
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
+					const resSwiggy = await SwiggyService.claimReferral(referralCode || '5G9P5Q', acc.tid, acc.token);
+					if (resSwiggy.success) successCount++;
+					results.push({
+						phone: acc.phone,
+						success: resSwiggy.success,
+						data: resSwiggy.data || resSwiggy.error
 					});
-					router.post('/orders/place', async (req, res) => {
-						try {
-							const tgUserId = getTgUserId(req);
-							const {
-								items,
-								restaurantId,
-								restaurantName,
-								total,
-								address,
-								couponCode,
-								paymentMethod,
-								upiVpa,
-								cookingRequest
-							} = req.body;
-							const {
-								active,
-								tid,
-								token,
-								userId
-							} = await getActiveCreds(tgUserId);
-
-							if (!tid || !token) {
-								return res.status(401).json({
-									success: false,
-									error: 'Please login to an account first before placing a real order.',
-								});
-							}
-
-							const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
-							if (!selected) {
-								return res.status(400).json({
-									success: false,
-									error: 'Please select a delivery address first.',
-								});
-							}
-
-							// Pre-check wallet balance (actual deduction happens ONLY after payment confirmation!)
-							const cfg = await SettingsRepo.get();
-							const currentFee = cfg.orderFee;
-							const currentMinDep = cfg.minDeposit;
-							if (currentFee > 0) {
-								const wallet = await WalletRepo.getWallet(tgUserId);
-								if (Number(wallet?.balance || 0) < currentFee) {
-									return res.status(402).json({
-										success: false,
-										code: 'INSUFFICIENT_WALLET_BALANCE',
-										error: `₹${currentFee} order fee required! Minimum ₹${currentMinDep} deposit needed in your wallet.`,
-									});
-								}
-							}
-
-							const lat = selected.lat || 25.6074;
-							const lng = selected.lng || 85.1587;
-							let addressId = String(selected.id || active?.selectedAddressId || '');
-							const deliveryAddress = address || [selected.flat_no, selected.address, selected.address_line1].filter(Boolean).join(', ') || 'Delivery Address';
-
-							// Swiggy /api/v3/order/place rejects local "addr_*" IDs; resolve a real Swiggy address_id if needed
-							if (!addressId || addressId.startsWith('addr_')) {
-								try {
-									const swiggyAddrRes = await SwiggyService.getAddresses(tid, token, userId);
-									const swiggyAddrs = swiggyAddrRes?.addresses || [];
-									if (swiggyAddrs.length > 0) {
-										const realMatch = swiggyAddrs.find((a) => a.id && !String(a.id).startsWith('addr_'));
-										if (realMatch) addressId = String(realMatch.id);
-									}
-								} catch (e) {}
-							}
-
-							// Step 1: Sync cart with Swiggy Payments (/api/v3/update-cart)
-							const cartPayload = {
-								address_nudge_check: false,
-								batch_opt_in: false,
-								cartLatLong: { lat: Number(lat), lng: Number(lng) },
-								cart_saved_preferences: { is_cutlery_opted: 'false' },
-								cutleryComments: String(cookingRequest || ''),
-								address_id: String(addressId),
-								restaurantId: String(restaurantId || ''),
-								cartItems: (items || []).map((i) => ({
-									menu_item_id: String(i.baseId || i.id),
-									quantity: Number(i.quantity || 1),
-									addons: i.addons || [],
-									variants: i.variants || [],
-									cost: Math.round(Number(i.price || 0) * 100),
-								})),
-							};
-							const updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId);
-							if (!updateRes.success || (updateRes.data && updateRes.data.statusCode && updateRes.data.statusCode !== 0)) {
-								return res.status(400).json({
-									success: false,
-									error: updateRes.data?.statusMessage || updateRes.error?.statusMessage || (typeof updateRes.error === 'string' ? updateRes.error : 'Swiggy cart sync failed.'),
-									details: updateRes.data || updateRes.error,
-								});
-							}
-
-							let swiggyOrderTotal = Number(updateRes.data?.data?.order_total ?? 0);
-
-							// Step 2: Apply coupon on Swiggy if provided
-							if (couponCode) {
-								const couponRes = await SwiggyService.applyCoupon(couponCode, tid, token, userId);
-								if (couponRes?.data?.data?.order_total !== undefined) {
-									swiggyOrderTotal = Number(couponRes.data.data.order_total);
-								}
-							}
-
-							const finalTxAmount = swiggyOrderTotal > 0 ? swiggyOrderTotal : total;
-
-							// Step 3: Place order on Swiggy Payments (/api/v3/order/place)
-							const placeRes = await SwiggyService.placeOrder({
-								paymentMethod: paymentMethod || 'UPIIntent',
-								upiVpa: upiVpa || '',
-								transaction_amount: finalTxAmount,
-								addressId,
-								lat,
-								lng,
-								cookingRequest: cookingRequest || '',
-							}, tid, token, userId);
-
-							if (!placeRes.success || !placeRes.orderId) {
-								return res.status(400).json({
-									success: false,
-									error: placeRes.statusMessage || (typeof placeRes.error === 'string' ? placeRes.error : placeRes.error?.statusMessage) || 'Swiggy rejected order placement.',
-									details: placeRes.data || placeRes.error,
-								});
-							}
-
-							const newOrder = {
-								order_id: String(placeRes.orderId),
-								paas_id: String(placeRes.paasId || ''),
-								restaurant_name: restaurantName || 'Toing Pro Restaurant',
-								order_total: String(placeRes.amount || total || '0'),
-								order_status: 'PAYMENT_PENDING',
-								delivery_address: deliveryAddress,
-								receiver_name: selected.name || active?.userName || '',
-								receiver_phone: selected.mobile || active?.phone || '',
-								order_time: 'Just now',
-								payment_method: upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent'),
-								items: (items || []).map((i) => ({
-									name: i.name,
-									quantity: i.quantity || 1,
-									cost: Math.round(Number(i.price || 0) * 100),
-								})),
-								coupon_applied: couponCode || '',
-							};
-
-							getUserPlacedOrders(tgUserId).unshift(newOrder);
-
-							const pmCheck = String(upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent')).toUpperCase();
-							if (pmCheck === 'CASH' || pmCheck === 'COD') {
-								newOrder.order_status = 'CONFIRMED';
-								if (!chargedOrderIds.has(newOrder.order_id)) {
-									chargedOrderIds.add(newOrder.order_id);
-									await WalletRepo.deductOrderFee(tgUserId, currentFee, newOrder.order_id);
-								}
-								sendOrderPlacedTelegram(tgUserId, newOrder.order_id, active, newOrder, false);
-							}
-
-							res.json({
-								success: true,
-								order_id: newOrder.order_id,
-								paas_id: newOrder.paas_id,
-								amount: newOrder.order_total,
-								upi_uri: placeRes.upiUri || '',
-								payment_code: upiVpa ? 'UPI' : 'UPIIntent',
-								message: 'Order initiated! Complete UPI payment to confirm.',
-								order: newOrder,
-							});
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
+				} catch (e) {
+					results.push({
+						phone: acc.phone,
+						success: false,
+						error: e.message
 					});
-					router.post('/orders/confirm', async (req, res) => {
-						try {
-							const tgUserId = getTgUserId(req);
-							const {
-								orderId
-							} = req.body;
-							const {
-								active,
-								tid,
-								token,
-								userId
-							} = await getActiveCreds(tgUserId);
-							const result = await SwiggyService.confirmOrder(orderId, tid, token, userId);
-							if (result.success) {
-								if (!chargedOrderIds.has(String(orderId))) {
-									chargedOrderIds.add(String(orderId));
-									const cfg = await SettingsRepo.get();
-									await WalletRepo.deductOrderFee(tgUserId, cfg.orderFee, String(orderId));
-								}
-								const ord = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(orderId));
-								if (ord) ord.order_status = 'CONFIRMED';
-								sendOrderPlacedTelegram(tgUserId, orderId, active, ord || null, false);
-							}
-							res.json(result);
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
-					});
-					router.get('/orders/vpa-status', async (req, res) => {
-						try {
-							const {
-								paasId,
-								paymentCode
-							} = req.query;
-							const {
-								tid,
-								token,
-								userId
-							} = await getActiveCreds(getTgUserId(req));
-							const result = await SwiggyService.getVpaTxnStatus(paasId, paymentCode || 'UPIIntent', tid, token, userId);
-							res.json(result);
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
-					});
-					/* =========================================
-					   6. AUTOMATION TOOLS (DIRECT LIVE SWIGGY APIS)
-					   ========================================= */
-					router.post('/tools/claim-refer', async (req, res) => {
-						try {
-							const {
-								referralCode
-							} = req.body;
-							const {
-								tid,
-								token
-							} = await getActiveCreds(getTgUserId(req));
-							const result = await SwiggyService.claimReferral(referralCode, tid, token);
-							res.json({
-								success: true,
-								message: '₹50 Referral Bonus Claimed Successfully!',
-								data: result.data || result,
-							});
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
-					});
-					router.post('/tools/bulk-claim', async (req, res) => {
-						try {
-							const {
-								referralCode
-							} = req.body;
-							const accounts = await AccountRepo.getAll(getTgUserId(req));
-							const results = [];
-							let successCount = 0;
-							for (const acc of accounts) {
-								if (acc.tid && acc.token) {
-									try {
-										const resSwiggy = await SwiggyService.claimReferral(referralCode || '5G9P5Q', acc.tid, acc.token);
-										if (resSwiggy.success) successCount++;
-										results.push({
-											phone: acc.phone,
-											success: resSwiggy.success,
-											data: resSwiggy.data || resSwiggy.error
-										});
-									} catch (e) {
-										results.push({
-											phone: acc.phone,
-											success: false,
-											error: e.message
-										});
-									}
-								}
-							}
-							res.json({
-								success: true,
-								total: accounts.length,
-								claimed: successCount,
-								results,
-							});
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
-					});
-					router.post('/tools/bulk-order', async (req, res) => {
-						try {
-							const tgUserId = getTgUserId(req);
-							const {
-								restaurantName,
-								total
-							} = req.body;
-							const accounts = (await AccountRepo.getAll(tgUserId)).filter((a) => !a.isUsed);
-							const results = [];
-							for (const acc of accounts.slice(0, 10)) {
-								if (acc.tid && acc.token) {
-									const orderId = Math.floor(100000000 + Math.random() * 900000000);
-									results.push({
-										phone: acc.phone,
-										orderId,
-										success: true,
-										status: 'Placed',
-									});
-									await AccountRepo.toggleUsed(acc._id, tgUserId);
-								}
-							}
-							res.json({
-								success: true,
-								count: results.length,
-								orders: results,
-							});
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
-					});
-					router.post('/tools/scratch-card', async (req, res) => {
-						try {
-							const {
-								tid,
-								token
-							} = await getActiveCreds(getTgUserId(req));
-							const result = await SwiggyService.assignScratchCard(tid, token);
-							res.json({
-								success: true,
-								message: 'Scratch Card Unlocked Successfully!',
-								data: result.data || result,
-							});
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
-					});
-					router.post('/tools/track-card', async (req, res) => {
-						try {
-							const {
-								orderId
-							} = req.body;
-							const {
-								tid,
-								token
-							} = await getActiveCreds(getTgUserId(req));
-							const result = await SwiggyService.getTrackCard(orderId, tid, token);
-							res.json({
-								success: true,
-								track: {
-									orderId,
-									status: result.data?.data?.order_status || result.data?.statusMessage || 'Order status fetched',
-									estimatedDeliveryTime: result.data?.data?.eta || '20 mins',
-									liveData: result.data || result,
-								},
-							});
-						} catch (err) {
-							res.status(500).json({
-								success: false,
-								error: err.message
-							});
-						}
-					});
-					/* =========================================
+				}
+			}
+		}
+		res.json({
+			success: true,
+			total: accounts.length,
+			claimed: successCount,
+			results,
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.post('/tools/bulk-order', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		const {
+			restaurantName,
+			total
+		} = req.body;
+		const accounts = (await AccountRepo.getAll(tgUserId)).filter((a) => !a.isUsed);
+		const results = [];
+		for (const acc of accounts.slice(0, 10)) {
+			if (acc.tid && acc.token) {
+				const orderId = Math.floor(100000000 + Math.random() * 900000000);
+				results.push({
+					phone: acc.phone,
+					orderId,
+					success: true,
+					status: 'Placed',
+				});
+				await AccountRepo.toggleUsed(acc._id, tgUserId);
+			}
+		}
+		res.json({
+			success: true,
+			count: results.length,
+			orders: results,
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.post('/tools/scratch-card', async (req, res) => {
+	try {
+		const {
+			tid,
+			token
+		} = await getActiveCreds(getTgUserId(req));
+		const result = await SwiggyService.assignScratchCard(tid, token);
+		res.json({
+			success: true,
+			message: 'Scratch Card Unlocked Successfully!',
+			data: result.data || result,
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+router.post('/tools/track-card', async (req, res) => {
+	try {
+		const {
+			orderId
+		} = req.body;
+		const {
+			tid,
+			token
+		} = await getActiveCreds(getTgUserId(req));
+		const result = await SwiggyService.getTrackCard(orderId, tid, token);
+		res.json({
+			success: true,
+			track: {
+				orderId,
+				status: result.data?.data?.order_status || result.data?.statusMessage || 'Order status fetched',
+				estimatedDeliveryTime: result.data?.data?.eta || '20 mins',
+				liveData: result.data || result,
+			},
+		});
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
+/* =========================================
    7. WALLET & BHARATPE MERCHANT RECHARGE
    ========================================= */
 router.get('/wallet', async (req, res) => {
@@ -1676,37 +1772,62 @@ router.get('/wallet', async (req, res) => {
 			transactions,
 		});
 	} catch (err) {
-		res.status(500).json({ success: false, error: err.message });
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
 	}
 });
-
 router.get('/admin/settings', async (req, res) => {
 	try {
 		const tgUserId = getTgUserId(req);
 		if (!isAdminUser(tgUserId)) {
-			return res.status(403).json({ success: false, error: 'Admin access required' });
+			return res.status(403).json({
+				success: false,
+				error: 'Admin access required'
+			});
 		}
 		const cfg = await SettingsRepo.get();
-		res.json({ success: true, ...cfg });
+		res.json({
+			success: true,
+			...cfg
+		});
 	} catch (err) {
-		res.status(500).json({ success: false, error: err.message });
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
 	}
 });
-
 router.post('/admin/settings', async (req, res) => {
 	try {
 		const tgUserId = getTgUserId(req);
 		if (!isAdminUser(tgUserId)) {
-			return res.status(403).json({ success: false, error: 'Admin access required' });
+			return res.status(403).json({
+				success: false,
+				error: 'Admin access required'
+			});
 		}
-		const { orderFee, minDeposit } = req.body;
-		const updated = await SettingsRepo.update({ orderFee, minDeposit });
-		res.json({ success: true, message: 'Settings updated!', ...updated });
+		const {
+			orderFee,
+			minDeposit
+		} = req.body;
+		const updated = await SettingsRepo.update({
+			orderFee,
+			minDeposit
+		});
+		res.json({
+			success: true,
+			message: 'Settings updated!',
+			...updated
+		});
 	} catch (err) {
-		res.status(500).json({ success: false, error: err.message });
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
 	}
 });
-
 router.post('/wallet/recharge/init', async (req, res) => {
 	try {
 		const tgUserId = getTgUserId(req);
@@ -1720,7 +1841,10 @@ router.post('/wallet/recharge/init', async (req, res) => {
 			});
 		}
 		const refId = 'TOING' + Date.now().toString().slice(-8);
-		const { upiUri, qrUrl } = BharatPeService.buildUpiPayment(amount, refId);
+		const {
+			upiUri,
+			qrUrl
+		} = BharatPeService.buildUpiPayment(amount, refId);
 		if (!upiUri) {
 			return res.status(500).json({
 				success: false,
@@ -1741,17 +1865,21 @@ router.post('/wallet/recharge/init', async (req, res) => {
 			minDeposit,
 		});
 	} catch (err) {
-		res.status(500).json({ success: false, error: err.message });
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
 	}
 });
-
 router.post('/wallet/recharge/verify', async (req, res) => {
 	try {
 		const tgUserId = getTgUserId(req);
-		const { refId, utr } = req.body;
+		const {
+			refId,
+			utr
+		} = req.body;
 		const cleanUtr = String(utr || '').replace(/\s+/g, '').trim();
 		const session = refId ? pendingRecharges.get(refId) : null;
-
 		const bpRes = await BharatPeService.fetchTransactions(2);
 		if (!bpRes.success) {
 			return res.status(502).json({
@@ -1760,17 +1888,11 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 				error: bpRes.error || 'Could not reach BharatPe Merchant API',
 			});
 		}
-
 		const txns = bpRes.transactions || [];
 		let matched = null;
-
 		if (cleanUtr) {
 			// Manual UTR match against BharatPe live transactions
-			matched = txns.find((t) =>
-				String(t.bankReferenceNo || '').trim() === cleanUtr &&
-				t.status === 'SUCCESS' &&
-				t.type === 'PAYMENT_RECV'
-			);
+			matched = txns.find((t) => String(t.bankReferenceNo || '').trim() === cleanUtr && t.status === 'SUCCESS' && t.type === 'PAYMENT_RECV');
 			if (!matched) {
 				return res.json({
 					success: true,
@@ -1789,12 +1911,7 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 		} else if (session && session.tgUserId === tgUserId) {
 			// Auto-match latest unclaimed SUCCESS transaction matching amount & after session start
 			for (const t of txns) {
-				if (
-					t.status === 'SUCCESS' &&
-					t.type === 'PAYMENT_RECV' &&
-					Number(t.amount) === Number(session.amount) &&
-					Number(t.paymentTimestamp || 0) >= session.createdAt - 15000
-				) {
+				if (t.status === 'SUCCESS' && t.type === 'PAYMENT_RECV' && Number(t.amount) === Number(session.amount) && Number(t.paymentTimestamp || 0) >= session.createdAt - 15000) {
 					const already = await WalletRepo.isUtrClaimed(t.bankReferenceNo);
 					if (!already) {
 						matched = t;
@@ -1809,7 +1926,6 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 				error: 'Recharge session expired. Please enter UTR or generate a new QR.',
 			});
 		}
-
 		if (!matched) {
 			return res.json({
 				success: true,
@@ -1817,14 +1933,7 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 				message: 'Waiting for payment confirmation...',
 			});
 		}
-
-		const creditRes = await WalletRepo.creditByUtr(
-			tgUserId,
-			Number(matched.amount),
-			String(matched.bankReferenceNo),
-			`BharatPe QR Recharge (UTR: ${matched.bankReferenceNo})`
-		);
-
+		const creditRes = await WalletRepo.creditByUtr(tgUserId, Number(matched.amount), String(matched.bankReferenceNo), `BharatPe QR Recharge (UTR: ${matched.bankReferenceNo})`);
 		if (!creditRes.success) {
 			return res.status(400).json({
 				success: false,
@@ -1832,7 +1941,6 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 				error: creditRes.error,
 			});
 		}
-
 		if (refId) pendingRecharges.delete(refId);
 		res.json({
 			success: true,
@@ -1843,10 +1951,12 @@ router.post('/wallet/recharge/verify', async (req, res) => {
 			message: `₹${matched.amount} added to your wallet!`,
 		});
 	} catch (err) {
-		res.status(500).json({ success: false, error: err.message });
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
 	}
 });
-
 // Safe external-browser UPI launcher for Telegram Mini App WebView
 router.get('/upi-launch', (req, res) => {
 	const rawUri = String(req.query.uri || '').trim();
@@ -1858,7 +1968,6 @@ router.get('/upi-launch', (req, res) => {
 	const phonepeUri = `phonepe://pay?${queryPart}`;
 	const paytmUri = `paytmmp://pay?${queryPart}`;
 	const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=210x210&margin=8&data=${encodeURIComponent(rawUri)}`;
-
 	res.setHeader('Content-Type', 'text/html; charset=utf-8');
 	res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -1909,5 +2018,4 @@ router.get('/upi-launch', (req, res) => {
 </body>
 </html>`);
 });
-
 module.exports = router;
