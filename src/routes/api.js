@@ -230,11 +230,19 @@ const getActiveCreds = async (tgUserId = 'default') => {
 	const tid = active?.tid || '';
 	const userId = active?.userId || extractUserIdFromTid(tid);
 	if (active && userId && !active.userId) active.userId = userId;
+	const raw = active?.rawSession || {};
+	const deviceId = String(raw.deviceId || raw.device_id || raw.swuid || '');
+	const sid = String(raw.sid || '');
+	if (typeof SwiggyService.setSessionContext === 'function') {
+		SwiggyService.setSessionContext({ deviceId, sid, userId });
+	}
 	return {
 		active,
 		tid,
 		token: active?.token || '',
 		userId,
+		deviceId,
+		sid,
 	};
 };
 /* =========================================
@@ -400,7 +408,7 @@ router.post('/accounts/import-json', async (req, res) => {
 			phone: String(phone).replace(/\D/g, '').slice(-10) || phone,
 			tid,
 			token,
-			userId: String(parsed.userId || parsed.user_id || ''),
+			userId: String(parsed.userId || parsed.user_id || parsed.customerId || extractUserIdFromTid(tid) || ''),
 			userName: parsed.userName || parsed.name || 'Imported User',
 			email: parsed.email || '',
 			isActive: true,

@@ -1,4 +1,20 @@
 const axios = require('axios');
+const { AsyncLocalStorage } = require('async_hooks');
+const sessionCtx = new AsyncLocalStorage();
+
+const decodeTidClaims = (tid = '') => {
+	try {
+		const parts = String(tid || '').split('.');
+		if (parts.length >= 2) {
+			const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+			return {
+				sid: payload?.sid ? String(payload.sid) : '',
+				userId: payload?.user_id ? String(payload.user_id) : '',
+			};
+		}
+	} catch (e) {}
+	return { sid: '', userId: '' };
+};
 // Default authentic Swiggy Android / Toing App headers reverse-engineered directly from HAR files
 const DEFAULT_DISC_HEADERS = {
 	'user-agent': 'Swiggy-Android',
@@ -71,25 +87,45 @@ const buildProfileHeaders = (tid = '', token = '', extra = {}) => {
 	return h;
 };
 const buildDiscHeaders = (tid = '', token = '', extra = {}) => {
+	const ctx = sessionCtx.getStore() || {};
+	const claims = decodeTidClaims(tid);
 	const h = {
 		...DEFAULT_DISC_HEADERS,
 		...extra
 	};
+	if (ctx.deviceId) {
+		h['deviceid'] = String(ctx.deviceId);
+		h['swuid'] = String(ctx.deviceId);
+	}
+	const sid = ctx.sid || claims.sid;
+	if (sid) h['sid'] = sid;
 	if (tid) h['tid'] = tid;
 	if (token) h['token'] = token;
 	return h;
 };
 const buildPaymentHeaders = (tid = '', token = '', userId = '', extra = {}) => {
+	const ctx = sessionCtx.getStore() || {};
+	const claims = decodeTidClaims(tid);
 	const h = {
 		...DEFAULT_PAYMENT_HEADERS,
 		...extra
 	};
+	if (ctx.deviceId) {
+		h['deviceid'] = String(ctx.deviceId);
+		h['swuid'] = String(ctx.deviceId);
+	}
+	const sid = ctx.sid || claims.sid;
+	if (sid) h['sid'] = sid;
 	if (tid) h['tid'] = tid;
 	if (token) h['token'] = token;
-	if (userId) h['userid'] = String(userId);
+	const uid = userId || claims.userId;
+	if (uid) h['userid'] = String(uid);
 	return h;
 };
 const SwiggyService = {
+	setSessionContext(ctx = {}) {
+		sessionCtx.enterWith(ctx || {});
+	},
 	/* ==========================================================
 	   1. AUTHENTICATION & SESSION
 	   ========================================================== */
