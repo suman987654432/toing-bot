@@ -1045,13 +1045,24 @@ const SwiggyService = {
 		}
 	},
 	// Apply Coupon Code (Direct from payments.swiggy.com)
-	async applyCoupon(couponCode, tid = '', token = '', userId = '') {
+	async applyCoupon(couponCode, tid = '', token = '', userId = '', opts = {}) {
 		const url = `https://payments.swiggy.com/api/v3/apply-coupon`;
 		try {
+			const extraHeaders = {};
+			if (opts.lat !== undefined && opts.lng !== undefined) {
+				extraHeaders['lat'] = String(opts.lat);
+				extraHeaders['latitude'] = String(opts.lat);
+				extraHeaders['lng'] = String(opts.lng);
+				extraHeaders['longitude'] = String(opts.lng);
+			}
+			if (opts.addressId) {
+				extraHeaders['addressid'] = String(opts.addressId);
+				extraHeaders['cartaddressid'] = String(opts.addressId);
+			}
 			const response = await axios.post(url, {
 				coupon_code: couponCode.trim().toUpperCase()
 			}, {
-				headers: buildPaymentHeaders(tid, token, userId),
+				headers: buildPaymentHeaders(tid, token, userId, extraHeaders),
 				timeout: 10000,
 			});
 			return {
@@ -1156,15 +1167,20 @@ const SwiggyService = {
 		const url = `https://payments.swiggy.com/api/v3/order/place`;
 		const amount = Number(orderData.transaction_amount || 0);
 		const isUpiCollect = Boolean(orderData.upiVpa);
+		const isBhimCoupon = String(orderData.couponCode || '').toUpperCase().includes('BHIM');
 		const payload = {
 			upi_transaction_info: isUpiCollect ? {
 				payer_vpa: String(orderData.upiVpa).trim(),
 				save_vpa: false
+			} : (isBhimCoupon ? {
+				intent_app: 'in.org.npci.upiapp',
+				transaction_mode: '',
+				intent_app_display_name: 'BHIM',
 			} : {
 				intent_app: 'com.google.android.apps.nbu.paisa.user',
 				transaction_mode: '',
 				intent_app_display_name: 'Google Pay',
-			},
+			}),
 			force_validate_coupon: false,
 			transaction_amount: amount,
 			selected_split_pay_amounts: {},
