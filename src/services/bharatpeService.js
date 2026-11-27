@@ -59,15 +59,10 @@ const BharatPeService = {
   buildUpiPayment(amount, refId) {
     const { upiId, merchantName } = this.getConfig();
     if (!upiId) return { upiUri: '', qrUrl: '' };
-    const params = new URLSearchParams({
-      pa: upiId,
-      pn: merchantName,
-      am: String(Number(amount).toFixed(2)),
-      cu: 'INR',
-      tr: refId,
-      tn: `ToingFee ${refId}`,
-    });
-    const upiUri = `upi://pay?${params.toString().replace('%40', '@')}`;
+    const amt = Number(amount).toFixed(2);
+    const pn = encodeURIComponent(String(merchantName || 'Toing Pro').trim());
+    const tn = encodeURIComponent(`ToingFee ${refId}`);
+    const upiUri = `upi://pay?pa=${upiId}&pn=${pn}&am=${amt}&cu=INR&tn=${tn}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(upiUri)}`;
     return { upiUri, qrUrl };
   },
