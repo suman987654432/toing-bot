@@ -1127,8 +1127,11 @@ const SwiggyService = {
 			order_comments: String(orderData.cookingRequest || ''),
 		};
 		try {
+			const extraHeaders = {};
+			if (orderData.cartId) extraHeaders['cartid'] = String(orderData.cartId);
+			if (orderData.addressId) extraHeaders['cartaddressid'] = String(orderData.addressId);
 			const response = await axios.post(url, payload, {
-				headers: buildPaymentHeaders(tid, token, userId),
+				headers: buildPaymentHeaders(tid, token, userId, extraHeaders),
 				timeout: 15000,
 			});
 			const d = response.data || {};

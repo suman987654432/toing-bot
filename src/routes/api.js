@@ -1558,7 +1558,11 @@ router.post('/orders/place', async (req, res) => {
 				cost: Math.round(Number(i.price || 0) * 100),
 			})),
 		};
-		const updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId);
+		const updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId, {
+			lat,
+			lng,
+			addressId,
+		});
 		if (!updateRes.success || (updateRes.data && updateRes.data.statusCode && updateRes.data.statusCode !== 0)) {
 			return res.status(400).json({
 				success: false,
@@ -1566,7 +1570,9 @@ router.post('/orders/place', async (req, res) => {
 				details: updateRes.data || updateRes.error,
 			});
 		}
-		let swiggyOrderTotal = Number(updateRes.data?.data?.order_total ?? 0);
+		const swiggyCartData = updateRes.data?.data || {};
+		const cartId = String(swiggyCartData.originalCartId || swiggyCartData.cartId || swiggyCartData.cart?.id || '');
+		let swiggyOrderTotal = Number(swiggyCartData.order_total ?? 0);
 		// Step 2: Apply coupon on Swiggy if provided
 		if (couponCode) {
 			const couponRes = await SwiggyService.applyCoupon(couponCode, tid, token, userId);
@@ -1584,6 +1590,7 @@ router.post('/orders/place', async (req, res) => {
 			lat,
 			lng,
 			cookingRequest: cookingRequest || '',
+			cartId,
 		}, tid, token, userId);
 		if (!placeRes.success || !placeRes.orderId) {
 			return res.status(400).json({
