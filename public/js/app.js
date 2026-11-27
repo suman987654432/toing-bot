@@ -1892,8 +1892,9 @@ async function fetchCoupons() {
 		let html = '';
 		coupons.forEach((c) => {
 			const isApplied = state.cart.couponCode === c.code;
+			const isLocked = Boolean(c.locked || /^add\s*₹/i.test(String(c.subtitle || '').trim())) && !isApplied;
 			html += `
-        <div class="address-card-item" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;" onclick="selectCoupon('${c.code}')">
+        <div class="address-card-item" style="cursor:${isLocked ? 'not-allowed' : 'pointer'}; opacity:${isLocked ? '0.6' : '1'}; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;" ${isLocked ? '' : `onclick="selectCoupon('${c.code}')"`}>
           <div style="flex:1; margin-right:12px;">
             <div class="address-card-top" style="margin-bottom:4px; display:flex; align-items:center; gap:6px;">
               <span class="badge-tag tag-account" style="font-weight:700;">${c.code}</span>
@@ -1902,8 +1903,8 @@ async function fetchCoupons() {
             <div style="font-size:12px; font-weight:600; color:var(--text-main);">${c.subtitle || c.title}</div>
             <div style="font-size:11px; color:var(--text-muted); line-height:1.3; margin-top:2px;">${c.description}</div>
           </div>
-          <button class="pill-btn ${isApplied ? 'green-pill' : 'purple-pill'}" style="font-size:11px; padding:6px 14px; white-space:nowrap;">
-            ${isApplied ? 'APPLIED ✓' : 'APPLY'}
+          <button class="pill-btn ${isApplied ? 'green-pill' : (isLocked ? '' : 'purple-pill')}" ${isLocked ? 'disabled style="font-size:11px; padding:6px 12px; white-space:nowrap; background:rgba(148,163,184,0.18); color:var(--text-muted); border:1px solid rgba(148,163,184,0.25); cursor:not-allowed;"' : 'style="font-size:11px; padding:6px 14px; white-space:nowrap;"'}>
+            ${isApplied ? 'APPLIED ✓' : (isLocked ? '🔒 LOCKED' : 'APPLY')}
           </button>
         </div>
       `;

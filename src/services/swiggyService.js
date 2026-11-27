@@ -800,23 +800,30 @@ const SwiggyService = {
 				}),
 				timeout: 10000,
 			});
-			// Extract coupons array
+			// Extract coupons array across all cards
 			let coupons = [];
 			const cards = response.data?.success?.cards || [];
 			for (const c of cards) {
 				const clist = c.card?.card?.coupons || [];
-				if (clist.length > 0) {
-					coupons = clist.map((item) => ({
+				const cardTitle = String(c.card?.card?.title || '');
+				for (const item of clist) {
+					const sub = String(item.subtitle || '').trim();
+					const ctaType = String(item.ctaType || '').toUpperCase();
+					const isAddMore = /^add\s*₹/i.test(sub) || /not\s*applicable|unavailable/i.test(sub);
+					const isLocked = isAddMore || (ctaType && ctaType !== 'APPLY_COUPON' && ctaType !== 'APPLY');
+					coupons.push({
 						id: item.id,
 						code: item.title,
 						title: item.title,
 						subtitle: item.subtitle,
 						description: item.description,
 						ribbonText: item.ribbonText,
+						ctaText: item.ctaText || (isLocked ? 'LOCKED' : 'APPLY'),
+						locked: Boolean(isLocked),
+						section: cardTitle,
 						discount: item.title?.includes('125') ? 125 : item.title?.includes('150') ? 150 : 50,
 						logo: item.logo ? `https://toing-media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_80,h_80,c_fill/${item.logo}` : '',
-					}));
-					break;
+					});
 				}
 			}
 			// Only return live coupons from Swiggy (no static/hardcoded coupons)
