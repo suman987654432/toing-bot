@@ -99,9 +99,11 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		if (couponDisc > 0) billLines.push(`• ᴄᴏᴜᴘᴏɴ ᴅɪꜱᴄᴏᴜɴᴛ: −${couponDisc.toFixed(2)}`);
 		billLines.push(`• ɢᴏᴠᴇʀɴᴍᴇɴᴛ ᴛᴀxᴇꜱ: ${taxes}`);
 		billLines.push(`• ᴛᴏ ᴘᴀʏ: ${total}`);
+		const cfg = await SettingsRepo.get();
+		const orderFee = Number(cfg?.orderFee ?? 3);
 		const lines = [`✅ ʏᴏᴜʀ ᴏʀᴅᴇʀ ɪꜱ ᴘʟᴀᴄᴇᴅ!`, ``,
 			accountPhone ? `📱 ᴀᴄᴄᴏᴜɴᴛ: ${accountPhone}` : null, `🗑 ᴀᴅᴅʀᴇꜱꜱ ᴅᴇʟᴇᴛᴇᴅ: ${addressDeleted ? 'ʏᴇꜱ' : 'ɴᴏ'}`, ``,
-			restaurantName ? `🍽 ${toSmallCaps(restaurantName)}` : null, `🆔 ᴏʀᴅᴇʀ ɪᴅ: ${orderId}`, `💳 ᴘᴀʏᴍᴇɴᴛ: ${payText}`, `📍 ꜱᴛᴀᴛᴜꜱ: ${statusText}`, `🔗 ᴛʀᴀᴄᴋɪɴɢ: ${trackUrl}`,
+			restaurantName ? `🍽 ${toSmallCaps(restaurantName)}` : null, `🆔 ᴏʀᴅᴇʀ ɪᴅ: ${orderId}`, `💳 ᴘᴀʏᴍᴇɴᴛ: ${payText}`, `📍 ꜱᴛᴀᴛᴜꜱ: ${statusText}`, `💰 ᴏʀᴅᴇʀ ꜰᴇᴇꜱ: ${orderFee} Rs`, `🔗 ᴛʀᴀᴄᴋɪɴɢ: ${trackUrl}`,
 			itemLines ? `ɪᴛᴇᴍꜱ\n${itemLines}` : null, ``, `ʙɪʟʟ ᴅᴇᴛᴀɪʟꜱ`,
 			billLines.join('\n'), ``, `📍 ᴅᴇʟɪᴠᴇʀʏ ᴀᴅᴅʀᴇꜱꜱ`,
 			addrStr ? `• ᴀᴅᴅʀᴇꜱꜱ: ${addrStr}` : null,
