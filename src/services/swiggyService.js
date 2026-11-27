@@ -1,4 +1,6 @@
-const axios = require('axios');
+const https = require('https');
+const swiggyKeepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 25, maxFreeSockets: 10, timeout: 60000 });
+const axios = require('axios').create({ httpsAgent: swiggyKeepAliveAgent });
 const { AsyncLocalStorage } = require('async_hooks');
 const sessionCtx = new AsyncLocalStorage();
 

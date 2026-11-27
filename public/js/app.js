@@ -1953,12 +1953,16 @@ async function loadPaymentOptions() {
 		}
 	} catch (e) {}
 }
-async function fetchCoupons() {
+let lastCouponsFetchKey = '';
+async function fetchCoupons(force = false) {
 	const container = document.getElementById('couponList');
 	if (!container) return;
 	try {
 		const items = Object.values(state.cart.items || {});
 		const cartValue = Math.max(0, Math.round(items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0)));
+		const fetchKey = `${state.cart.restaurantId || ''}_${cartValue}_${state.cart.couponCode || ''}_${state.activeAccount?._id || ''}`;
+		if (!force && fetchKey === lastCouponsFetchKey) return;
+		lastCouponsFetchKey = fetchKey;
 		const params = new URLSearchParams();
 		if (state.cart.restaurantId) params.set('restaurantId', state.cart.restaurantId);
 		if (cartValue > 0) params.set('cartValue', String(cartValue));

@@ -1108,6 +1108,25 @@ router.delete('/addresses/:id', async (req, res) => {
 /* =========================================
    3. SEARCH & MENU (DIRECT LIVE SWIGGY APIS)
    ========================================= */
+const browseCache = new Map();
+const BROWSE_CACHE_TTL_MS = 45000;
+const getBrowseCache = (key) => {
+	const hit = browseCache.get(key);
+	if (!hit) return null;
+	if (Date.now() - hit.ts > BROWSE_CACHE_TTL_MS) {
+		browseCache.delete(key);
+		return null;
+	}
+	return hit.val;
+};
+const setBrowseCache = (key, val) => {
+	if (browseCache.size >= 120) {
+		const oldest = browseCache.keys().next().value;
+		if (oldest) browseCache.delete(oldest);
+	}
+	browseCache.set(key, { ts: Date.now(), val });
+};
+
 router.post('/search', async (req, res) => {
 	try {
 		const {
@@ -1142,8 +1161,13 @@ router.post('/search', async (req, res) => {
 			city = selected?.city || '';
 		}
 		const searchQuery = query || 'Pizza';
-		const swiggyResult = await SwiggyService.searchRestaurants(searchQuery, lat, lng, tid, token, city);
-		const restaurants = swiggyResult.restaurants || [];
+		const searchKey = `search:${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}:${String(searchQuery).trim().toLowerCase()}`;
+		let restaurants = getBrowseCache(searchKey);
+		if (!restaurants) {
+			const swiggyResult = await SwiggyService.searchRestaurants(searchQuery, lat, lng, tid, token, city);
+			restaurants = swiggyResult.restaurants || [];
+			if (restaurants.length > 0) setBrowseCache(searchKey, restaurants);
+		}
 		res.json({
 			success: true,
 			query: searchQuery,
@@ -1185,8 +1209,13 @@ router.get('/menu/:restaurantId', async (req, res) => {
 			lng = selected?.lng || 85.1587;
 		}
 		const defaultCity = selected?.city || 'Patna';
-		const swiggyResult = await SwiggyService.getMenu(restaurantId, lat, lng, tid, token);
-		const items = swiggyResult.items || [];
+		const menuKey = `menu:${restaurantId}:${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}`;
+		let items = getBrowseCache(menuKey);
+		if (!items) {
+			const swiggyResult = await SwiggyService.getMenu(restaurantId, lat, lng, tid, token);
+			items = swiggyResult.items || [];
+			if (items.length > 0) setBrowseCache(menuKey, items);
+		}
 		res.json({
 			success: true,
 			restaurant: {
