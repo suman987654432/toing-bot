@@ -587,7 +587,10 @@ router.get('/addresses/reverse-geocode', async (req, res) => {
 	});
 	let rev = null;
 	try {
-		const { tid, token } = await getActiveCreds(getTgUserId(req));
+		const {
+			tid,
+			token
+		} = await getActiveCreds(getTgUserId(req));
 		const swiggyRev = await SwiggyService.recommendAddress(lat, lng, tid, token);
 		if (swiggyRev?.success && (swiggyRev.area || swiggyRev.display)) {
 			rev = swiggyRev;

@@ -334,6 +334,31 @@ const WalletRepo = {
       totalPages: Math.max(1, Math.ceil(totalUsers / lim)),
     };
   },
+
+  async getUserReport(tgUserId) {
+    const uid = normUid(tgUserId);
+    const [wallet, txns] = await Promise.all([
+      this.getWallet(uid),
+      this.getTransactions(uid, 50),
+    ]);
+    const list = (txns || []).map((t) => (t.toObject ? t.toObject() : t));
+    const deposits = list.filter((t) => t.type === 'CREDIT');
+    const debits = list.filter((t) => t.type === 'DEBIT');
+    const totalSpent = Math.round(debits.reduce((s, t) => s + Number(t.amount || 0), 0) * 100) / 100;
+    const totalDeposited = Math.max(
+      Number(wallet?.totalDeposited || 0),
+      Math.round(deposits.reduce((s, t) => s + Number(t.amount || 0), 0) * 100) / 100
+    );
+    return {
+      telegramUserId: uid,
+      balance: Number(wallet?.balance || 0),
+      totalDeposited,
+      totalSpent,
+      totalOrders: Number(wallet?.totalOrders || 0),
+      deposits,
+      debits,
+    };
+  },
 };
 
 module.exports = { Wallet: WalletModel, WalletTransaction: WalletTxnModel, WalletRepo };

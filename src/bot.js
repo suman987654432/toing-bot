@@ -377,28 +377,83 @@ const initBot = (webAppUrl) => {
 
     const renderUsersStatus = async (chatId, messageId, page = 1) => {
       const data = await WalletRepo.listUsers(page, 6);
+      const userButtons = [];
       const lines = await Promise.all(
         (data.users || []).map(async (u, idx) => {
-          const accs = await AccountRepo.getAll(u.telegramUserId).catch(() => []);
+          const [accs, rep] = await Promise.all([
+            AccountRepo.getAll(u.telegramUserId).catch(() => []),
+            WalletRepo.getUserReport(u.telegramUserId).catch(() => null),
+          ]);
           const num = (data.page - 1) * 6 + idx + 1;
-          return `${num}. \`${u.telegramUserId}\` — 💰₹${Number(u.balance || 0)} | 📦${Number(u.totalOrders || 0)} | 📱${(accs || []).length} acc`;
+          const dep = rep ? rep.totalDeposited : Number(u.totalDeposited || 0);
+          const spent = rep ? rep.totalSpent : 0;
+          const latestUtr = rep?.deposits?.find((d) => d.utr)?.utr || '';
+          userButtons.push({
+            text: `🔍 ${num}. ${u.telegramUserId}`,
+            callback_data: `adm_u_${u.telegramUserId}`,
+            style: 'primary',
+          });
+          return (
+            `${num}. \`${u.telegramUserId}\` — 💰Bal: *₹${Number(u.balance || 0)}* | 📥Dep: *₹${dep}* | 💸Spent: *₹${spent}* | 📦${Number(u.totalOrders || 0)} | 📱${(accs || []).length}` +
+            (latestUtr ? `\n   🧾 Last UTR: \`${latestUtr}\`` : '')
+          );
         })
       );
 
       const text =
         `👥 *USERS STATUS* (Page ${data.page}/${data.totalPages})\n` +
         `Total Users: *${data.totalUsers}* | Total Bal: *₹${data.totalBalance}* | Orders: *${data.totalOrders}*\n\n` +
-        (lines.length ? lines.join('\n') : '_No users recorded yet._');
+        (lines.length ? lines.join('\n') : '_No users recorded yet._') +
+        `\n\n_Tap any user button below to view full UTR & Spend history._`;
 
       const navRow = [];
       if (data.page > 1) navRow.push({ text: '◀️ Prev', callback_data: `adm_users_${data.page - 1}`, style: 'primary' });
       if (data.page < data.totalPages) navRow.push({ text: 'Next ▶️', callback_data: `adm_users_${data.page + 1}`, style: 'primary' });
 
       const keyboard = [];
+      for (let i = 0; i < userButtons.length; i += 2) {
+        keyboard.push(userButtons.slice(i, i + 2));
+      }
       if (navRow.length) keyboard.push(navRow);
       keyboard.push([{ text: '🔄 Refresh', callback_data: `adm_users_${data.page}`, style: 'success' }]);
       keyboard.push([{ text: '🔙 Back to Admin', callback_data: 'adm_home', style: 'danger' }]);
 
+      await sendOrEdit(chatId, messageId, text, keyboard);
+    };
+
+    const renderUserDetail = async (chatId, messageId, targetUid) => {
+      const [rep, accs] = await Promise.all([
+        WalletRepo.getUserReport(targetUid),
+        AccountRepo.getAll(targetUid).catch(() => []),
+      ]);
+      const depLines = rep.deposits.slice(0, 8).map((d, i) => {
+        const dt = d.createdAt ? new Date(d.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        const utrTxt = d.utr ? `UTR: \`${d.utr}\`` : (d.description || 'Admin Credit');
+        return `${i + 1}. +₹${d.amount} — ${utrTxt}${dt ? ` (${dt})` : ''}`;
+      });
+      const spentLines = rep.debits.slice(0, 8).map((d, i) => {
+        const dt = d.createdAt ? new Date(d.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        const ordTxt = d.orderId ? `Order \`#${d.orderId}\`` : (d.description || 'Debit');
+        return `${i + 1}. −₹${d.amount} — ${ordTxt}${dt ? ` (${dt})` : ''}`;
+      });
+
+      const text =
+        `👤 *USER WALLET & UTR DETAILS*\n` +
+        `• *User ID:* \`${rep.telegramUserId}\`\n` +
+        `• *Balance:* ₹${rep.balance}\n` +
+        `• *Total Deposited:* ₹${rep.totalDeposited}\n` +
+        `• *Total Spent (Fees):* ₹${rep.totalSpent}\n` +
+        `• *Total Orders:* ${rep.totalOrders} | *Accounts:* ${(accs || []).length}\n\n` +
+        `📥 *DEPOSITS & UTRs:*\n${depLines.length ? depLines.join('\n') : '_No deposits yet._'}\n\n` +
+        `💸 *SPENT / ORDER FEES:*\n${spentLines.length ? spentLines.join('\n') : '_No orders/debits yet._'}`;
+
+      const keyboard = [
+        [
+          { text: '🔄 Refresh', callback_data: `adm_u_${rep.telegramUserId}`, style: 'success' },
+          { text: '👥 All Users', callback_data: 'adm_users_1', style: 'primary' },
+        ],
+        [{ text: '🔙 Back to Admin', callback_data: 'adm_home', style: 'danger' }],
+      ];
       await sendOrEdit(chatId, messageId, text, keyboard);
     };
 
@@ -647,6 +702,10 @@ const initBot = (webAppUrl) => {
             adminPending.delete(uid);
             const page = Number(data.replace('adm_users_', '')) || 1;
             await renderUsersStatus(chatId, messageId, page);
+          } else if (data.startsWith('adm_u_')) {
+            adminPending.delete(uid);
+            const targetUid = data.slice('adm_u_'.length);
+            await renderUserDetail(chatId, messageId, targetUid);
           }
         }
       } catch (err) {
