@@ -1054,7 +1054,7 @@ const SwiggyService = {
 	   5. ORDERS & CHECKOUT (Direct payments.swiggy.com & chkout.swiggy.com)
 	   ========================================================== */
 	// Get Payment Options (1:1 pay_toing.har)
-	async getPaymentOptions(addressId = '', tid = '', token = '', userId = '') {
+	async getPaymentOptions(addressId = '', tid = '', token = '', userId = '', opts = {}) {
 		const url = `https://payments.swiggy.com/api/v3/payment/get-payment-options`;
 		const payload = {
 			address_id: String(addressId || ''),
@@ -1069,8 +1069,20 @@ const SwiggyService = {
 			bill_to_company_toggle: false,
 		};
 		try {
+			const extraHeaders = {};
+			if (opts.lat !== undefined && opts.lng !== undefined) {
+				extraHeaders['lat'] = String(opts.lat);
+				extraHeaders['latitude'] = String(opts.lat);
+				extraHeaders['lng'] = String(opts.lng);
+				extraHeaders['longitude'] = String(opts.lng);
+			}
+			if (addressId) {
+				extraHeaders['addressid'] = String(addressId);
+				extraHeaders['cartaddressid'] = String(addressId);
+			}
+			if (opts.cartId) extraHeaders['cartid'] = String(opts.cartId);
 			const response = await axios.post(url, payload, {
-				headers: buildPaymentHeaders(tid, token, userId),
+				headers: buildPaymentHeaders(tid, token, userId, extraHeaders),
 				timeout: 12000,
 			});
 			const d = response.data?.data || {};
@@ -1137,7 +1149,16 @@ const SwiggyService = {
 		try {
 			const extraHeaders = {};
 			if (orderData.cartId) extraHeaders['cartid'] = String(orderData.cartId);
-			if (orderData.addressId) extraHeaders['cartaddressid'] = String(orderData.addressId);
+			if (orderData.addressId) {
+				extraHeaders['addressid'] = String(orderData.addressId);
+				extraHeaders['cartaddressid'] = String(orderData.addressId);
+			}
+			if (orderData.lat !== undefined && orderData.lng !== undefined) {
+				extraHeaders['lat'] = String(orderData.lat);
+				extraHeaders['latitude'] = String(orderData.lat);
+				extraHeaders['lng'] = String(orderData.lng);
+				extraHeaders['longitude'] = String(orderData.lng);
+			}
 			const response = await axios.post(url, payload, {
 				headers: buildPaymentHeaders(tid, token, userId, extraHeaders),
 				timeout: 15000,

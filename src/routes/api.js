@@ -1483,6 +1483,9 @@ router.post('/orders/place', async (req, res) => {
 			restaurantName,
 			total,
 			address,
+			addressId: reqAddressId,
+			lat: reqLat,
+			lng: reqLng,
 			couponCode,
 			paymentMethod,
 			upiVpa,
@@ -1500,7 +1503,30 @@ router.post('/orders/place', async (req, res) => {
 				error: 'Please login to an account first before placing a real order.',
 			});
 		}
-		const selected = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+		const targetAddrId = String(reqAddressId || active?.selectedAddressId || '');
+		let selected = active?.addresses?.find((a) => String(a.id) === targetAddrId) || active?.addresses?.[0];
+		// If JSON-imported account hasn't synced addresses yet, auto-fetch from Swiggy
+		if (!selected) {
+			try {
+				const swiggyAddrRes = await SwiggyService.getAddresses(tid, token, userId);
+				const swiggyAddrs = swiggyAddrRes?.addresses || [];
+				if (swiggyAddrs.length > 0) {
+					selected = swiggyAddrs.find((a) => String(a.id) === targetAddrId) || swiggyAddrs[0];
+					if (active?._id) {
+						await AccountRepo.updateAddresses(active._id, swiggyAddrs).catch(() => {});
+						await AccountRepo.setSelectedAddress(active._id, selected.id).catch(() => {});
+					}
+				}
+			} catch (e) {}
+		}
+		if (!selected && reqLat && reqLng) {
+			selected = {
+				id: targetAddrId,
+				lat: Number(reqLat),
+				lng: Number(reqLng),
+				address: address || 'Delivery Address',
+			};
+		}
 		if (!selected) {
 			return res.status(400).json({
 				success: false,
@@ -1550,6 +1576,7 @@ router.post('/orders/place', async (req, res) => {
 			cutleryComments: String(cookingRequest || ''),
 			address_id: String(addressId),
 			restaurantId: String(restaurantId || ''),
+			couponCode: String(couponCode || ''),
 			cartItems: (items || []).map((i) => ({
 				menu_item_id: String(i.baseId || i.id),
 				quantity: Number(i.quantity || 1),
@@ -1571,16 +1598,26 @@ router.post('/orders/place', async (req, res) => {
 			});
 		}
 		const swiggyCartData = updateRes.data?.data || {};
-		const cartId = String(swiggyCartData.originalCartId || swiggyCartData.cartId || swiggyCartData.cart?.id || '');
+		let cartId = String(swiggyCartData.originalCartId || swiggyCartData.cartId || swiggyCartData.cart?.id || '');
 		let swiggyOrderTotal = Number(swiggyCartData.order_total ?? 0);
-		// Step 2: Apply coupon on Swiggy if provided
-		if (couponCode) {
+		// Step 2: Apply coupon on Swiggy if provided and not yet applied
+		if (couponCode && String(swiggyCartData.coupon_applied || '').toUpperCase() !== String(couponCode).toUpperCase()) {
 			const couponRes = await SwiggyService.applyCoupon(couponCode, tid, token, userId);
-			if (couponRes?.data?.data?.order_total !== undefined) {
-				swiggyOrderTotal = Number(couponRes.data.data.order_total);
+			const cd = couponRes?.data?.data || {};
+			if (cd.originalCartId || cd.cartId) {
+				cartId = String(cd.originalCartId || cd.cartId);
+			}
+			if (cd.order_total !== undefined) {
+				swiggyOrderTotal = Number(cd.order_total);
 			}
 		}
-		const finalTxAmount = swiggyOrderTotal > 0 ? swiggyOrderTotal : total;
+		// Step 2.5: Initialize payment session via get-payment-options (required by Swiggy before order/place)
+		const payOpts = await SwiggyService.getPaymentOptions(addressId, tid, token, userId, {
+			lat,
+			lng,
+			cartId,
+		});
+		const finalTxAmount = payOpts.paymentAmount > 0 ? Number(payOpts.paymentAmount) : (swiggyOrderTotal > 0 ? swiggyOrderTotal : total);
 		// Step 3: Place order on Swiggy Payments (/api/v3/order/place)
 		const placeRes = await SwiggyService.placeOrder({
 			paymentMethod: paymentMethod || 'UPIIntent',
