@@ -38,7 +38,17 @@ const DEFAULT_PAYMENT_HEADERS = {
 	'marketplacebusinessline': 'Regular',
 	'x-network-quality': 'GOOD',
 	'pl-version': '146',
-	'accept': 'application/json, */*',
+	'x-client-id': 'web-payment',
+	'x-checkout-webview': 'android',
+	'x-web-checkout-flow': 'cart',
+	'cartsource': 'Menu',
+	'cartentry': 'Cart_Crouton_Menu',
+	'referrer': 'menu',
+	'analyticsplatform': 'an',
+	'x-origin-id': 'android',
+	'origin': 'https://payments.swiggy.com',
+	'referer': 'https://payments.swiggy.com/?flow=cart&custom_back=true',
+	'accept': '*/*',
 	'content-type': 'application/json',
 };
 const buildProfileHeaders = (tid = '', token = '', extra = {}) => {
@@ -234,14 +244,12 @@ const SwiggyService = {
 			b.writeDoubleLE(Number(val), 0);
 			return Buffer.concat([pbVarint((fn << 3) | 1), b]);
 		};
-
 		const lat = Number(addrData.lat || 25.6074);
 		const lng = Number(addrData.lng || 85.1587);
 		const cleanPhone = String(addrData.phone || addrData.mobile || '').replace(/\D/g, '').slice(-10);
 		const recName = String(addrData.name || 'Customer').trim();
 		const tagStr = String(addrData.tag || 'OTHER').toUpperCase();
 		const tagCode = tagStr === 'HOME' ? 1 : (tagStr === 'WORK' ? 2 : 3);
-
 		const ctxMsg = Buffer.concat([
 			pbFieldVarint(1, 1),
 			pbFieldBytes(3, Buffer.concat([pbFieldStr(1, 'cart_screen'), pbFieldStr(2, 'android-consumer-app')])),
@@ -276,7 +284,6 @@ const SwiggyService = {
 			pbFieldBytes(3, addrMsg),
 			pbFieldVarint(4, 1),
 		]);
-
 		try {
 			const response = await axios.post(url, payload, {
 				headers: buildDiscHeaders(tid, token, {
@@ -292,7 +299,9 @@ const SwiggyService = {
 			// Field 1 (tag 0x0a) is the newly created Swiggy address_id string
 			let addressId = '';
 			if (buf.length > 2 && buf[0] === 0x0a) {
-				let len = 0, shift = 0, idx = 1;
+				let len = 0,
+					shift = 0,
+					idx = 1;
 				while (idx < buf.length) {
 					const b = buf[idx++];
 					len |= (b & 0x7f) << shift;
@@ -303,7 +312,10 @@ const SwiggyService = {
 					addressId = buf.slice(idx, idx + len).toString('utf8');
 				}
 			}
-			return { success: Boolean(addressId), addressId };
+			return {
+				success: Boolean(addressId),
+				addressId
+			};
 		} catch (error) {
 			return {
 				success: false,
@@ -612,7 +624,6 @@ const SwiggyService = {
 				const chunkBuf = Buffer.from(chunk, 'latin1');
 				let originalPrice = 0;
 				let price = 0;
-
 				// 1. Primary: Dish protobuf float tags 0x45 (original price) & 0x4D (Toing finalPrice)
 				// Prefer paired 0x45 + 0x4D (5 bytes apart) or standalone 0x4D / 0x45
 				for (let i = 0; i < chunkBuf.length - 9; i++) {
@@ -626,7 +637,6 @@ const SwiggyService = {
 						}
 					}
 				}
-
 				if (!price) {
 					for (let i = 0; i < chunkBuf.length - 4; i++) {
 						const tag = chunkBuf[i];
@@ -639,7 +649,6 @@ const SwiggyService = {
 						}
 					}
 				}
-
 				// 2. Fallback: Swiggy final/listing price string match (only if 0x4D/0x45 missing)
 				if (!price) {
 					const mFinal = chunk.match(/swiggy_final_price[^\d]+([0-9]{4,6})/);
@@ -655,7 +664,6 @@ const SwiggyService = {
 						if (op >= (price || 15)) originalPrice = op;
 					}
 				}
-
 				// 3. Last resort: Tag 0x15 (float32 price in paise)
 				if (!price) {
 					for (let i = 0; i < chunkBuf.length - 4; i++) {
@@ -668,7 +676,6 @@ const SwiggyService = {
 						}
 					}
 				}
-
 				if (!price) price = originalPrice || 0;
 				// Only keep originalPrice when the API genuinely reports a higher listing price than final price
 				if (!originalPrice || originalPrice <= price) originalPrice = price;
@@ -946,13 +953,14 @@ const SwiggyService = {
 		const amount = Number(orderData.transaction_amount || 0);
 		const isUpiCollect = Boolean(orderData.upiVpa);
 		const payload = {
-			upi_transaction_info: isUpiCollect
-				? { payer_vpa: String(orderData.upiVpa).trim(), save_vpa: false }
-				: {
-					intent_app: 'com.google.android.apps.nbu.paisa.user',
-					transaction_mode: '',
-					intent_app_display_name: 'Google Pay',
-				},
+			upi_transaction_info: isUpiCollect ? {
+				payer_vpa: String(orderData.upiVpa).trim(),
+				save_vpa: false
+			} : {
+				intent_app: 'com.google.android.apps.nbu.paisa.user',
+				transaction_mode: '',
+				intent_app_display_name: 'Google Pay',
+			},
 			force_validate_coupon: false,
 			transaction_amount: amount,
 			selected_split_pay_amounts: {},
@@ -978,12 +986,7 @@ const SwiggyService = {
 			const d = response.data || {};
 			const od = d.data?.order_data || {};
 			const orderId = od.order_id ? String(od.order_id) : '';
-			const paasId = String(
-				od.payment_txn_id ||
-				od.payment_info_v2?.payment_transactions?.[0]?.marketplace_reference_id ||
-				od.targeted_marketplace_payment_reference_id ||
-				''
-			);
+			const paasId = String(od.payment_txn_id || od.payment_info_v2?.payment_transactions?.[0]?.marketplace_reference_id || od.targeted_marketplace_payment_reference_id || '');
 			const rawStr = JSON.stringify(d);
 			const upiMatch = rawStr.match(/upi:\/\/pay\?[^"\\]+/);
 			return {

@@ -3,34 +3,46 @@ const http = require('http');
 const https = require('https');
 const tls = require('tls');
 
-function createProxyAgent(proxyUrl) {
+function createProxyAgent(proxyUrl, rejectUnauthorized = true) {
   const p = new URL(proxyUrl);
-  const agent = new https.Agent({ keepAlive: false });
+  const agent = new https.Agent({ keepAlive: false, rejectUnauthorized });
   agent.createConnection = (options, cb) => {
     const targetPort = options.port || 443;
     const headers = { Host: `${options.host}:${targetPort}` };
     if (p.username || p.password) {
       headers['Proxy-Authorization'] = 'Basic ' + Buffer.from(`${decodeURIComponent(p.username)}:${decodeURIComponent(p.password)}`).toString('base64');
     }
-    const req = http.request({
+    const transport = p.protocol === 'https:' ? https : http;
+    const req = transport.request({
       host: p.hostname,
-      port: Number(p.port || 80),
+      port: Number(p.port || (p.protocol === 'https:' ? 443 : 80)),
       method: 'CONNECT',
       path: `${options.host}:${targetPort}`,
       headers,
+      ...(p.protocol === 'https:' ? { rejectUnauthorized } : {}),
     });
     req.on('connect', (res, socket) => {
       if (res.statusCode !== 200) {
         socket.destroy();
         return cb(new Error(`Proxy CONNECT failed: ${res.statusCode}`));
       }
-      const tlsSocket = tls.connect({ socket, servername: options.servername || options.host });
+      const tlsSocket = tls.connect({
+        socket,
+        servername: options.servername || options.host,
+        rejectUnauthorized,
+      });
       cb(null, tlsSocket);
     });
     req.on('error', (err) => cb(err));
     req.end();
   };
   return agent;
+}
+
+function isTlsCertError(err) {
+  const code = String(err?.code || '');
+  const msg = String(err?.message || '');
+  return /SELF_SIGNED_CERT|UNABLE_TO_VERIFY|CERT_/i.test(code) || /self-signed certificate|certificate chain|unable to verify/i.test(msg);
 }
 
 const BharatPeService = {
@@ -87,44 +99,57 @@ const BharatPeService = {
       timeout: 15000,
     };
 
-    try {
-      const axiosCfg = { ...baseCfg };
-      if (proxyUrl) {
-        axiosCfg.httpsAgent = createProxyAgent(proxyUrl);
-        axiosCfg.proxy = false;
+    const requestWithMode = async (useProxy, rejectUnauthorized) => {
+      const cfg = { ...baseCfg };
+      if (useProxy && proxyUrl) {
+        cfg.httpsAgent = createProxyAgent(proxyUrl, rejectUnauthorized);
+        cfg.proxy = false;
+      } else if (!rejectUnauthorized) {
+        cfg.httpsAgent = new https.Agent({ keepAlive: false, rejectUnauthorized: false });
       }
-      const response = await axios.get(url, axiosCfg);
-
-      const txns = response.data?.data?.transactions || [];
+      const response = await axios.get(url, cfg);
       return {
         success: Boolean(response.data?.status),
-        transactions: txns,
+        transactions: response.data?.data?.transactions || [],
       };
+    };
+
+    try {
+      return await requestWithMode(Boolean(proxyUrl), true);
     } catch (err) {
+      // If a proxy/network injects a self-signed cert in the chain, retry with relaxed TLS on BharatPe socket only
+      if (isTlsCertError(err)) {
+        console.warn('[BharatPe TLS Cert Error]:', err.message, '— retrying with relaxed TLS...');
+        try {
+          return await requestWithMode(Boolean(proxyUrl), false);
+        } catch (tlsRetryErr) {
+          if (proxyUrl && !tlsRetryErr.response) {
+            try {
+              return await requestWithMode(false, false);
+            } catch (directErr) {
+              console.error('[BharatPe Direct TLS Fallback Error]:', directErr.response?.status, directErr.response?.data || directErr.message);
+            }
+          }
+          err = tlsRetryErr;
+        }
+      }
       // Residential proxies can occasionally hit a bad exit node (502/ECONNRESET); retry proxy once, then direct
       if (proxyUrl && !err.response) {
         console.warn('[BharatPe Proxy Failed]:', err.message, '— retrying proxy once...');
         try {
-          const retryRes = await axios.get(url, {
-            ...baseCfg,
-            httpsAgent: createProxyAgent(proxyUrl),
-            proxy: false,
-          });
-          const txns = retryRes.data?.data?.transactions || [];
-          return {
-            success: Boolean(retryRes.data?.status),
-            transactions: txns,
-          };
+          return await requestWithMode(true, true);
         } catch (proxyRetryErr) {
           console.warn('[BharatPe Proxy Retry Failed]:', proxyRetryErr.message, '— retrying direct...');
           try {
-            const directRes = await axios.get(url, baseCfg);
-            const txns = directRes.data?.data?.transactions || [];
-            return {
-              success: Boolean(directRes.data?.status),
-              transactions: txns,
-            };
+            return await requestWithMode(false, true);
           } catch (directErr) {
+            if (isTlsCertError(directErr)) {
+              try {
+                return await requestWithMode(false, false);
+              } catch (directTlsErr) {
+                console.error('[BharatPe Direct TLS Error]:', directTlsErr.response?.status, directTlsErr.response?.data || directTlsErr.message);
+              }
+            }
             console.error('[BharatPe Direct Fallback Error]:', directErr.response?.status, directErr.response?.data || directErr.message);
           }
         }

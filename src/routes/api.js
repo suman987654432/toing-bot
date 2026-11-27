@@ -1160,6 +1160,9 @@ router.post('/cart/update', async (req, res) => {
 			cartPayload = {
 				address_nudge_check: false,
 				batch_opt_in: false,
+				first_time_user: true,
+				cart_type: 'REGULAR',
+				selected_sla_option: 'STANDARD',
 				cartLatLong: {
 					lat,
 					lng
