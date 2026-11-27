@@ -1422,20 +1422,33 @@ function confirmCustomiseAddToCart() {
 	state.cart.restaurantDistance = rest.distance || '';
 	state.cart.restaurantImage = rest.imageUrl || '';
 	const selectedAddons = [];
+	const selectedVariants = [];
 	let total = currentCustomisingDish.price;
 	const checkedInputs = document.querySelectorAll('#custSheetBody input:checked');
 	checkedInputs.forEach((inp) => {
 		const extra = parseFloat(inp.dataset.choicePrice || 0);
 		total += isNaN(extra) ? 0 : extra;
-		selectedAddons.push({
-			id: inp.dataset.choiceId,
-			name: inp.dataset.choiceName,
-			price: extra,
-			groupName: inp.dataset.groupName,
-		});
+		if (inp.type === 'radio') {
+			selectedVariants.push({
+				group_id: String(inp.dataset.groupId || ''),
+				variation_id: String(inp.dataset.choiceId || ''),
+				name: inp.dataset.choiceName || '',
+				price: isNaN(extra) ? 0 : extra,
+				isSelected: false,
+			});
+		} else {
+			selectedAddons.push({
+				id: inp.dataset.choiceId,
+				choice_id: String(inp.dataset.choiceId || ''),
+				group_id: String(inp.dataset.groupId || ''),
+				name: inp.dataset.choiceName || '',
+				price: isNaN(extra) ? 0 : extra,
+				groupName: inp.dataset.groupName,
+			});
+		}
 	});
 	const roundedPrice = Math.round(total);
-	const addonKey = selectedAddons.map((a) => a.id).sort().join('_');
+	const addonKey = [...selectedVariants.map((v) => v.variation_id), ...selectedAddons.map((a) => a.id)].sort().join('_');
 	const cartItemId = `${currentCustomisingDish.id}${addonKey ? '_' + addonKey : ''}`;
 	if (state.cart.items[cartItemId]) {
 		state.cart.items[cartItemId].quantity += 1;
@@ -1450,6 +1463,7 @@ function confirmCustomiseAddToCart() {
 			isVeg: currentCustomisingDish.isVeg,
 			imageUrl: currentCustomisingDish.imageUrl,
 			addons: selectedAddons,
+			variants: selectedVariants,
 		};
 	}
 	showToast(`Added "${currentCustomisingDish.name}" to Cart! 🛒`);
@@ -1626,7 +1640,8 @@ function updateCartView() {
 		let dishesHtml = '';
 		items.forEach((item) => {
 			const isVeg = item.isVeg !== false;
-			const addonsText = item.addons && item.addons.length > 0 ? item.addons.map(a => `${a.name}${a.price ? ` (+₹${Math.round(a.price)})` : ''}`).join(', ') : '';
+			const customParts = [...(item.variants || []), ...(item.addons || [])];
+			const addonsText = customParts.length > 0 ? customParts.map(a => `${a.name}${a.price ? ` (+₹${Math.round(a.price)})` : ''}`).join(', ') : '';
 			dishesHtml += `
         <div class="cart-dish-row">
           <div class="cart-dish-info-col">

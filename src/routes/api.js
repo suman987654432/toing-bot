@@ -1186,8 +1186,18 @@ router.post('/cart/update', async (req, res) => {
 				cartItems: req.body.items.map((i) => ({
 					menu_item_id: String(i.baseId || i.id),
 					quantity: Number(i.quantity || 1),
-					addons: i.addons || [],
-					variants: i.variants || [],
+					addons: (i.addons || []).map((a) => ({
+						choice_id: String(a.choice_id || a.id || ''),
+						group_id: String(a.group_id || ''),
+						name: String(a.name || ''),
+						price: Math.round(Number(a.price || 0) * 100),
+					})),
+					variants: (i.variants || []).map((v) => ({
+						group_id: String(v.group_id || ''),
+						isSelected: false,
+						name: String(v.name || ''),
+						variation_id: String(v.variation_id || v.id || ''),
+					})),
 					cost: Math.round(Number(i.price || 0) * 100),
 				})),
 			};
@@ -1580,8 +1590,18 @@ router.post('/orders/place', async (req, res) => {
 			cartItems: (items || []).map((i) => ({
 				menu_item_id: String(i.baseId || i.id),
 				quantity: Number(i.quantity || 1),
-				addons: i.addons || [],
-				variants: i.variants || [],
+				addons: (i.addons || []).map((a) => ({
+					choice_id: String(a.choice_id || a.id || ''),
+					group_id: String(a.group_id || ''),
+					name: String(a.name || ''),
+					price: Math.round(Number(a.price || 0) * 100),
+				})),
+				variants: (i.variants || []).map((v) => ({
+					group_id: String(v.group_id || ''),
+					isSelected: false,
+					name: String(v.name || ''),
+					variation_id: String(v.variation_id || v.id || ''),
+				})),
 				cost: Math.round(Number(i.price || 0) * 100),
 			})),
 		};
