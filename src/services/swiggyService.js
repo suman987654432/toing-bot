@@ -209,17 +209,147 @@ const SwiggyService = {
 		const url = `https://maps.swiggy.com/addresses/v1/all?client_id=android-consumer-app${userId ? `&entityId=${userId}` : ''}&entityType=1&marketPlaceId=1`;
 		try {
 			const response = await axios.get(url, {
-				headers: buildDiscHeaders(tid, token),
+				headers: buildDiscHeaders(tid, token, {
+					'accept': 'application/x-protobuf, application/json, */*',
+				}),
+				responseType: 'arraybuffer',
 				timeout: 10000,
 			});
+
+			const buf = Buffer.from(response.data || []);
+			// Check if response is JSON
+			try {
+				const json = JSON.parse(buf.toString('utf8'));
+				const list = json.addresses || json.data?.addresses || json;
+				if (Array.isArray(list)) return { success: true, addresses: list };
+			} catch (e) {}
+
+			// Decode Protobuf
+			const addresses = [];
+			let i = 0;
+			while (i < buf.length) {
+				const byte = buf[i++];
+				const fn = byte >> 3;
+				const wt = byte & 0x07;
+				if (wt === 2) {
+					let len = 0, shift = 0;
+					while (i < buf.length) {
+						const b = buf[i++];
+						len |= (b & 0x7f) << shift;
+						if (!(b & 0x80)) break;
+						shift += 7;
+					}
+					const val = buf.slice(i, i + len);
+					if (fn === 2) {
+						// Decode address message
+						let j = 0;
+						let addrId = '';
+						let formattedAddress = '';
+						let addrLine1 = '';
+						let area = '';
+						let city = '';
+						let lat = 25.6074;
+						let lng = 85.1587;
+						let contactName = '';
+						let contactPhone = '';
+
+						while (j < val.length) {
+							const b2 = val[j++];
+							const fn2 = b2 >> 3;
+							const wt2 = b2 & 0x07;
+							if (wt2 === 2) {
+								let l2 = 0, s2 = 0;
+								while (j < val.length) {
+									const b_ = val[j++];
+									l2 |= (b_ & 0x7f) << s2;
+									if (!(b_ & 0x80)) break;
+									s2 += 7;
+								}
+								const v2 = val.slice(j, j + l2);
+								if (fn2 === 1) addrId = v2.toString('utf8');
+								else if (fn2 === 3) {
+									let k = 0;
+									while (k < v2.length) {
+										const b3 = v2[k++];
+										const fn3 = b3 >> 3;
+										const wt3 = b3 & 0x07;
+										if (wt3 === 2) {
+											let l3 = 0, s3 = 0;
+											while (k < v2.length) {
+												const b_ = v2[k++];
+												l3 |= (b_ & 0x7f) << s3;
+												if (!(b_ & 0x80)) break;
+												s3 += 7;
+											}
+											const v3 = v2.slice(k, k + l3);
+											if (fn3 === 1) formattedAddress = v3.toString('utf8');
+											else if (fn3 === 2) addrLine1 = v3.toString('utf8');
+											else if (fn3 === 5) area = v3.toString('utf8');
+											else if (fn3 === 6) city = v3.toString('utf8');
+											else if (fn3 === 14) {
+												let m = 0;
+												while (m < v3.length) {
+													const b4 = v3[m++];
+													const fn4 = b4 >> 3;
+													const wt4 = b4 & 0x07;
+													if (wt4 === 1 && m + 8 <= v3.length) {
+														const num = v3.readDoubleLE(m);
+														if (fn4 === 1) lat = num;
+														if (fn4 === 2) lng = num;
+														m += 8;
+													}
+												}
+											}
+											else if (fn3 === 20) contactName = v3.toString('utf8');
+											else if (fn3 === 22) contactPhone = v3.toString('utf8');
+											k += l3;
+										} else if (wt3 === 0) { while (v2[k++] & 0x80) {} }
+										else if (wt3 === 1) { k += 8; }
+										else if (wt3 === 5) { k += 4; }
+									}
+								}
+								j += l2;
+							} else if (wt2 === 0) { while (val[j++] & 0x80) {} }
+							else if (wt2 === 1) { j += 8; }
+							else if (wt2 === 5) { j += 4; }
+						}
+
+						if (addrId) {
+							addresses.push({
+								id: addrId,
+								display_address: formattedAddress || addrLine1 || 'Delivery Address',
+								address_line1: addrLine1 || formattedAddress,
+								area,
+								city: city || 'Patna',
+								lat,
+								lng,
+								name: contactName || 'Customer',
+								phone: contactPhone || '',
+								actual_address: {
+									formatted_address: formattedAddress,
+									address_line: addrLine1,
+									contact_name: contactName,
+									phone: contactPhone,
+									location: { lat, lng }
+								}
+							});
+						}
+					}
+					i += len;
+				} else if (wt === 0) { while (buf[i++] & 0x80) {} }
+				else if (wt === 1) { i += 8; }
+				else if (wt === 5) { i += 4; }
+			}
+
 			return {
 				success: true,
-				addresses: response.data?.addresses || response.data?.data?.addresses || response.data || [],
+				addresses,
 			};
 		} catch (error) {
 			return {
 				success: false,
-				error: error.response?.data || error.message
+				error: error.response?.data || error.message,
+				addresses: []
 			};
 		}
 	},
