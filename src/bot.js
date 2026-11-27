@@ -4,9 +4,12 @@ const axios = require('axios');
 const { AccountRepo } = require('./models/Account');
 const { WalletRepo } = require('./models/Wallet');
 const { SettingsRepo, isAdminUser } = require('./models/Settings');
+const BharatPeService = require('./services/bharatpeService');
 
 let bot = null;
 const adminPending = new Map(); // adminTgId -> { action, mode, targetUid }
+const walletPending = new Map(); // tgUid -> { step: 'await_amount' }
+const botDeposits = new Map(); // depId -> { uid, chatId, amount, createdAt }
 
 const initBot = (webAppUrl) => {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -155,7 +158,10 @@ const initBot = (webAppUrl) => {
           { text: '👥 Saved Accounts', callback_data: 'view_accounts', style: 'primary' },
           { text: '⚡ Tools & Claims', callback_data: 'tools_menu', style: 'primary' },
         ],
-        [{ text: '🛒 Buy Account', url: 'https://t.me/CodeAddabot', style: 'primary' }],
+        [
+          { text: '👛 Wallet', callback_data: 'wallet_home', style: 'primary' },
+          { text: '🛒 Buy Account', url: 'https://t.me/CodeAddabot', style: 'primary' },
+        ],
       ];
 
       if (isAdminUser(tgUid)) {
@@ -163,6 +169,58 @@ const initBot = (webAppUrl) => {
       }
 
       await sendOrEdit(chatId, messageId, welcomeText, keyboard);
+    };
+
+    const renderWalletHome = async (chatId, uid, messageId = null) => {
+      const [wallet, txns, cfg] = await Promise.all([
+        WalletRepo.getWallet(uid),
+        WalletRepo.getTransactions(uid, 5),
+        SettingsRepo.get(),
+      ]);
+      const balance = Number(wallet?.balance || 0);
+      const totalDeposits = Number(wallet?.totalDeposited || 0);
+      const orderFee = Number(cfg?.orderFee ?? 3);
+
+      let txnLines = 'NO TRANSACTIONS YET';
+      if (txns && txns.length > 0) {
+        txnLines = txns.map((t) => {
+          const sign = t.type === 'CREDIT' ? '+' : '-';
+          return `• ${sign}₹${t.amount} — ${t.description || t.type}`;
+        }).join('\n');
+      }
+
+      const text =
+        `👛 *WALLET*\n\n` +
+        `*BALANCE* : ₹${balance}\n` +
+        `*TOTAL DEPOSITS* : ₹${totalDeposits}\n` +
+        `*ORDER FEES* : ₹${orderFee}\n\n` +
+        `*RECENT TRANSACTIONS*\n${txnLines}`;
+
+      const keyboard = [
+        [
+          { text: '⬅️ BACK', callback_data: 'wallet_back_start', style: 'primary' },
+          { text: '💰 DEPOSIT', callback_data: 'wallet_deposit', style: 'success' },
+        ],
+      ];
+      await sendOrEdit(chatId, messageId, text, keyboard);
+    };
+
+    const renderDepositPrompt = async (chatId, uid, messageId = null) => {
+      const cfg = await SettingsRepo.get();
+      const orderFee = Number(cfg?.orderFee ?? 3);
+      const minDeposit = Number(cfg?.minDeposit ?? 15);
+      walletPending.set(uid, { step: 'await_amount' });
+
+      const text =
+        `💰 *DEPOSIT*\n\n` +
+        `*ORDER FEES* : ₹${orderFee} PER ORDER\n` +
+        `*MINIMUM DEPOSIT* : ₹${minDeposit}\n\n` +
+        `SEND THE AMOUNT YOU WANT TO DEPOSIT :`;
+
+      const keyboard = [
+        [{ text: '⬅️ BACK', callback_data: 'wallet_home', style: 'primary' }],
+      ];
+      await sendOrEdit(chatId, messageId, text, keyboard);
     };
 
     const renderAdminHome = async (chatId, messageId = null) => {
@@ -448,6 +506,78 @@ const initBot = (webAppUrl) => {
             });
           }
           await tgApi('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
+        } else if (data === 'wallet_home') {
+          walletPending.delete(uid);
+          await renderWalletHome(chatId, uid, messageId);
+        } else if (data === 'wallet_back_start') {
+          walletPending.delete(uid);
+          await sendStartMenu(chatId, uid, messageId);
+        } else if (data === 'wallet_deposit') {
+          await renderDepositPrompt(chatId, uid, messageId);
+        } else if (data.startsWith('dep_can_')) {
+          const depId = data.slice('dep_can_'.length);
+          botDeposits.delete(depId);
+          if (messageId) {
+            await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId }).catch(() => {});
+          }
+          await renderWalletHome(chatId, uid, null);
+        } else if (data.startsWith('dep_chk_')) {
+          const depId = data.slice('dep_chk_'.length);
+          const session = botDeposits.get(depId);
+          if (!session) {
+            if (ctx.answerCallbackQuery) {
+              await ctx.answerCallbackQuery({ text: '❌ Deposit session expired. Generate a new QR.', show_alert: true }).catch(() => {});
+            }
+            return;
+          }
+          const bpRes = await BharatPeService.fetchTransactions(2);
+          if (!bpRes.success) {
+            if (ctx.answerCallbackQuery) {
+              await ctx.answerCallbackQuery({ text: `⚠️ ${bpRes.error || 'BharatPe API error'}`, show_alert: true }).catch(() => {});
+            }
+            return;
+          }
+          let matched = null;
+          for (const t of (bpRes.transactions || [])) {
+            if (t.status === 'SUCCESS' && t.type === 'PAYMENT_RECV' && Number(t.amount) === Number(session.amount) && Number(t.paymentTimestamp || 0) >= session.createdAt - 15000) {
+              const already = await WalletRepo.isUtrClaimed(t.bankReferenceNo);
+              if (!already) {
+                matched = t;
+                break;
+              }
+            }
+          }
+          if (!matched) {
+            if (ctx.answerCallbackQuery) {
+              await ctx.answerCallbackQuery({ text: `⏳ Payment not received yet. Pay exact ₹${session.amount} and tap Check Payment again.`, show_alert: true }).catch(() => {});
+            }
+            return;
+          }
+          const creditRes = await WalletRepo.creditByUtr(uid, Number(matched.amount), String(matched.bankReferenceNo), `BharatPe Deposit (${depId})`);
+          if (!creditRes.success) {
+            if (ctx.answerCallbackQuery) {
+              await ctx.answerCallbackQuery({ text: `❌ ${creditRes.error}`, show_alert: true }).catch(() => {});
+            }
+            return;
+          }
+          botDeposits.delete(depId);
+          if (ctx.answerCallbackQuery) {
+            await ctx.answerCallbackQuery({ text: `✅ ₹${matched.amount} added to wallet!` }).catch(() => {});
+          }
+          if (messageId) {
+            await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId }).catch(() => {});
+          }
+          await tgApi('sendMessage', {
+            chat_id: chatId,
+            text: `✅ <b>DEPOSIT CONFIRMED!</b>\n\n• <b>AMOUNT</b> : ₹${matched.amount}\n• <b>ORDER ID</b> : <code>${depId}</code>\n• <b>UTR</b> : <code>${matched.bankReferenceNo}</code>\n• <b>NEW BALANCE</b> : ₹${creditRes.balance}`,
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🚀 Open Toing Pro', web_app: { url: currentWebAppUrl }, style: 'success' }],
+                [{ text: '👛 Wallet', callback_data: 'wallet_home', style: 'primary' }],
+              ],
+            },
+          });
         } else if (data === 'tools_menu') {
           await tgApi('sendMessage', {
             chat_id: chatId,
@@ -528,12 +658,57 @@ const initBot = (webAppUrl) => {
       }
     });
 
-    // Interactive Admin text input handler
+    // Interactive Wallet Deposit + Admin text input handler
     bot.on('message', async (ctx) => {
       const msg = ctx.message || ctx;
       const text = String(msg.text || '').trim();
       const uid = String(msg.from?.id || ctx.from?.id || '');
-      if (!text || text.startsWith('/') || !isAdminUser(uid)) return;
+      const chatId = String(msg.chat?.id || uid);
+      if (!text || text.startsWith('/')) return;
+
+      const wPending = walletPending.get(uid);
+      if (wPending && wPending.step === 'await_amount') {
+        try {
+          const cfg = await SettingsRepo.get();
+          const minDeposit = Number(cfg?.minDeposit ?? 15);
+          const amt = Math.round(Number(text));
+          if (!amt || isNaN(amt) || amt < minDeposit) {
+            await tgApi('sendMessage', {
+              chat_id: chatId,
+              text: `❌ Minimum deposit is ₹${minDeposit}. Please send a valid amount (e.g. ${minDeposit}).`,
+            });
+            return;
+          }
+          walletPending.delete(uid);
+          const depId = 'DEP' + Date.now() + Math.random().toString(16).slice(2, 8).toUpperCase();
+          const { upiUri, qrUrl } = BharatPeService.buildUpiPayment(amt, depId);
+          if (!upiUri || !qrUrl) {
+            await tgApi('sendMessage', { chat_id: chatId, text: '❌ BharatPe UPI ID is not configured on server.' });
+            return;
+          }
+          botDeposits.set(depId, { uid, chatId, amount: amt, createdAt: Date.now() });
+          await tgApi('sendPhoto', {
+            chat_id: chatId,
+            photo: qrUrl,
+            caption: `<b>PAY ₹${amt}</b>\n<code>${depId}</code>\nPAY WITH ANY UPI APP, THEN TAP CHECK PAYMENT.`,
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '✅ CHECK PAYMENT', callback_data: `dep_chk_${depId}`, style: 'success' },
+                  { text: '❌ CANCEL', callback_data: `dep_can_${depId}`, style: 'danger' },
+                ],
+              ],
+            },
+          });
+        } catch (err) {
+          console.error('[Telegram Bot Deposit Error]:', err.message);
+          await tgApi('sendMessage', { chat_id: chatId, text: '❌ Failed to generate deposit QR. Please try again.' }).catch(() => {});
+        }
+        return;
+      }
+
+      if (!isAdminUser(uid)) return;
 
       const pending = adminPending.get(uid);
       if (!pending) return;

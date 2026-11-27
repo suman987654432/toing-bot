@@ -2257,12 +2257,6 @@ async function initBharatPeRecharge() {
 		if (copyBtn) {
 			copyBtn.textContent = data.upiId ? `📋 Copy UPI ID (${data.upiId})` : '📋 Copy UPI ID';
 		}
-		const bpLink = document.getElementById('bharatPeUpiLink');
-		bpLink.href = '#';
-		bpLink.onclick = (e) => {
-			e.preventDefault();
-			openExternalUpi(data.upiUri);
-		};
 		document.getElementById('inputManualUtr').value = '';
 		document.getElementById('bharatPePollStatus').innerHTML = '<div class="mini-spinner"></div><span>Waiting for BharatPe auto-verification...</span>';
 		document.getElementById('walletAmountStep').classList.add('hidden');
