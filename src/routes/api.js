@@ -1235,27 +1235,36 @@ router.post('/cart/update', async (req, res) => {
 			}
 		}
 		const itemSubtotal = Number(d.cart_subtotal ?? d.item_total ?? (Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0));
+
 		// Check if Swiggy genuinely unlocks Free Delivery for this restaurant/location:
 		// 1. Swiggy appliedTradeCampaignHeaders has FREE_DELIVERY
 		// 2. Swiggy fullCouponLessFreeDeliveryApplied is true
 		// 3. Swiggy offerPresentationInfo has deliveryFeeSavingsInfo (e.g. "₹25 saved with free delivery")
 		// 4. Rendering details has key 'free_non_super_delivery_exclusive' or value 'FREE'
 		const hasFreeDeliveryCampaign = (d.appliedTradeCampaignHeaders || []).some(
-			(c) => c.discountType === 'FREE_DELIVERY' || c.shareType === 'FREE_DELIVERY') || Boolean(d.fullCouponLessFreeDeliveryApplied) || Boolean(d.offerPresentationInfo?.deliveryFeeSavingsInfo);
+			(c) => c.discountType === 'FREE_DELIVERY' || c.shareType === 'FREE_DELIVERY'
+		) || Boolean(d.fullCouponLessFreeDeliveryApplied) || Boolean(d.offerPresentationInfo?.deliveryFeeSavingsInfo);
+
 		const deliveryRow = (d.rendering_details || []).find(
-			(r) => ['free_non_super_delivery_exclusive', 'positive_delivery_charges_exclusive', 'delivery_charges', 'delivery_fee'].includes(String(r.key || '')) || /delivery fee/i.test(String(r.display_text || '')));
+			(r) => ['free_non_super_delivery_exclusive', 'positive_delivery_charges_exclusive', 'delivery_charges', 'delivery_fee'].includes(String(r.key || '')) ||
+				/delivery fee/i.test(String(r.display_text || ''))
+		);
 		const rawDelivLabel = String(deliveryRow?.display_text || '').replace(/^"+|"+$/g, '').trim() || 'Delivery Fee';
 		const itemTotalRow = (d.rendering_details || []).find((r) => r.key === 'item_total');
+
 		const rawDeliveryFee = Number(d.delivery_charges ?? 0);
 		const isFreeDelivery = hasFreeDeliveryCampaign || deliveryRow?.key === 'free_non_super_delivery_exclusive' || String(deliveryRow?.value || '').toUpperCase() === 'FREE' || rawDeliveryFee === 0;
+
 		const deliveryFee = isFreeDelivery ? 0 : rawDeliveryFee;
 		const deliveryStrikeOff = deliveryRow?.intermediateText || d.deliveryChargeStrikeOffAmount || (rawDeliveryFee > 0 ? String(rawDeliveryFee) : '25');
+
 		const taxes = Number(d.total_tax ?? d.taxes?.GST ?? 0);
 		const packingCharges = Number(d.total_packing_charges ?? 0);
 		const couponDiscount = Number(d.coupon_discount_total ?? 0);
 		const rewardRow = (d.rendering_details || []).find((r) => r.key === 'offerCashReward');
 		const referralCash = rewardRow ? Math.abs(Math.round(Number(rewardRow.value || 0))) : Math.abs(Math.round(Number(d.swiggy_money || 0)));
 		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount - referralCash));
+
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
 			itemTotal: itemSubtotal,
 			strikeOffItemTotal: itemTotalRow?.intermediateText || '',
@@ -1330,16 +1339,10 @@ router.post('/coupons/apply', async (req, res) => {
 			userId
 		} = await getActiveCreds(getTgUserId(req));
 		if (!code) {
-			return res.status(400).json({
-				success: false,
-				error: 'Enter a coupon code'
-			});
+			return res.status(400).json({ success: false, error: 'Enter a coupon code' });
 		}
 		if (!tid) {
-			return res.status(400).json({
-				success: false,
-				error: 'Please login to an account first'
-			});
+			return res.status(400).json({ success: false, error: 'Please login to an account first' });
 		}
 		// Call live apply coupon endpoint (no static/fake fallback)
 		const swiggyRes = await SwiggyService.applyCoupon(code, tid, token, userId);
