@@ -1183,20 +1183,34 @@ router.post('/cart/update', async (req, res) => {
 		const result = await SwiggyService.updateCart(cartPayload, tid, token, userId);
 		let d = result.data?.data || {};
 		let autoAppliedCoupon = null;
+		let bhimStatus = '';
+		let bhimReason = '';
 		const itemTotalForBhim = Number(d.cart_subtotal ?? d.item_total ?? (Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0));
-		if (result.success && tid && req.body.autoApplyBhim !== false && !req.body.couponCode && !d.coupon_applied && !d.is_coupon_applied && itemTotalForBhim >= 99) {
-			try {
-				const bhimRes = await SwiggyService.applyCoupon('BHIMNEW', tid, token, userId);
-				const d2 = bhimRes?.data?.data || {};
-				if (bhimRes.success && (d2.is_coupon_applied || d2.coupon_applied === 'BHIMNEW' || Number(d2.coupon_discount_total || 0) > 0)) {
-					d = d2;
-					result.data = bhimRes.data;
-					autoAppliedCoupon = {
-						code: d2.coupon_applied || 'BHIMNEW',
-						discount: Number(d2.coupon_discount_total || 50),
-					};
+		if (String(d.coupon_applied || '').toUpperCase() === 'BHIMNEW' || String(req.body.couponCode || '').toUpperCase() === 'BHIMNEW') {
+			bhimStatus = 'applied';
+		} else if (result.success && tid && req.body.autoApplyBhim !== false && !req.body.couponCode && !d.coupon_applied && !d.is_coupon_applied) {
+			if (itemTotalForBhim >= 99) {
+				try {
+					const bhimRes = await SwiggyService.applyCoupon('BHIMNEW', tid, token, userId);
+					const d2 = bhimRes?.data?.data || {};
+					if (bhimRes.success && (d2.is_coupon_applied || d2.coupon_applied === 'BHIMNEW' || Number(d2.coupon_discount_total || 0) > 0)) {
+						d = d2;
+						result.data = bhimRes.data;
+						bhimStatus = 'applied';
+						autoAppliedCoupon = {
+							code: d2.coupon_applied || 'BHIMNEW',
+							discount: Number(d2.coupon_discount_total || 50),
+						};
+					} else {
+						bhimStatus = 'off';
+						bhimReason = bhimRes?.data?.statusMessage || bhimRes?.error?.statusMessage || 'BHIM ₹50 not available on this account';
+					}
+				} catch (e) {
+					bhimStatus = 'off';
 				}
-			} catch (e) {}
+			} else {
+				bhimStatus = 'need_99';
+			}
 		}
 		const deliveryRow = (d.rendering_details || []).find(
 			(r) => /delivery fee/i.test(String(r.display_text || '')) || ['delivery_charges', 'free_non_super_delivery_exclusive', 'delivery_fee'].includes(String(r.key || '')));
@@ -1217,7 +1231,9 @@ router.post('/cart/update', async (req, res) => {
 		res.json({
 			...result,
 			bill,
-			autoAppliedCoupon
+			autoAppliedCoupon,
+			bhimStatus,
+			bhimReason
 		});
 	} catch (err) {
 		res.status(500).json({

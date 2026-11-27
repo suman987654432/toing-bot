@@ -1731,6 +1731,45 @@ function renderCartBill(rawItemTotal) {
 	if (fcBtnText) {
 		fcBtnText.textContent = state.cart.fcClaimed ? 'Claimed ₹50 FC ✔' : 'Claim ₹50 FC';
 	}
+	// Update Apply Coupon card & BHIM ON/OFF badge
+	const cTitle = document.getElementById('couponCardTitle');
+	const cSub = document.getElementById('couponCardSub');
+	const bhimBadge = document.getElementById('bhimStatusBadge');
+	if (cTitle && cSub) {
+		if (state.cart.couponCode) {
+			cTitle.textContent = `Coupon '${state.cart.couponCode}' applied`;
+			cSub.textContent = `Saved ₹${couponDiscount || state.cart.discount || 50} on this order`;
+		} else if (state.cart.bhimStatus === 'off') {
+			cTitle.textContent = 'Apply coupon';
+			cSub.textContent = state.cart.bhimReason || 'BHIM ₹50 not available on this account';
+		} else {
+			cTitle.textContent = 'Apply coupon';
+			cSub.textContent = 'See offers for this restaurant';
+		}
+	}
+	if (bhimBadge) {
+		if (state.cart.couponCode === 'BHIMNEW' || state.cart.bhimStatus === 'applied') {
+			bhimBadge.textContent = 'BHIM ON ✓';
+			bhimBadge.style.background = 'rgba(22, 163, 74, 0.14)';
+			bhimBadge.style.color = '#16a34a';
+			bhimBadge.style.border = '1px solid rgba(22, 163, 74, 0.3)';
+			bhimBadge.classList.remove('hidden');
+		} else if (state.cart.bhimStatus === 'off') {
+			bhimBadge.textContent = 'BHIM OFF';
+			bhimBadge.style.background = 'rgba(239, 68, 68, 0.12)';
+			bhimBadge.style.color = '#dc2626';
+			bhimBadge.style.border = '1px solid rgba(239, 68, 68, 0.25)';
+			bhimBadge.classList.remove('hidden');
+		} else if (state.cart.bhimStatus === 'need_99') {
+			bhimBadge.textContent = 'BHIM ₹99+';
+			bhimBadge.style.background = 'rgba(148, 163, 184, 0.14)';
+			bhimBadge.style.color = 'var(--text-muted)';
+			bhimBadge.style.border = '1px solid rgba(148, 163, 184, 0.25)';
+			bhimBadge.classList.remove('hidden');
+		} else {
+			bhimBadge.classList.add('hidden');
+		}
+	}
 	document.getElementById('billGrandTotal').textContent = `₹${toPay}`;
 	// Sticky pay bar elements
 	const stickyAmt = document.getElementById('stickyPayAmount');
@@ -1772,6 +1811,8 @@ function syncCartBillWithApi(items, rawItemTotal) {
 			if (data.success && data.bill) {
 				cartBillSyncKey = key;
 				state.cart.liveBill = data.bill;
+				state.cart.bhimStatus = data.bhimStatus || '';
+				state.cart.bhimReason = data.bhimReason || '';
 				if (data.autoAppliedCoupon && data.autoAppliedCoupon.code && !state.cart.couponCode) {
 					state.cart.couponCode = data.autoAppliedCoupon.code;
 					state.cart.discount = Number(data.autoAppliedCoupon.discount || 50);
