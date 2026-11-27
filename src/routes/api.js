@@ -1163,6 +1163,13 @@ router.post('/cart/update', async (req, res) => {
 				first_time_user: true,
 				cart_type: 'REGULAR',
 				selected_sla_option: 'STANDARD',
+				customer_selected_sla_option: '',
+				delivery_type_opt_in: false,
+				cart_journey_ctx: {
+					cart_category_type: '',
+					cart_initialization_source: '',
+					request_contexts: []
+				},
 				cartLatLong: {
 					lat,
 					lng
@@ -1173,6 +1180,8 @@ router.post('/cart/update', async (req, res) => {
 				cutleryComments: String(req.body.cookingRequest || ''),
 				address_id: addressId,
 				restaurantId: String(req.body.restaurantId || ''),
+				parent_restaurant_id: String(req.body.restaurantId || ''),
+				restaurantName: String(req.body.restaurantName || ''),
 				couponCode: String(req.body.couponCode || ''),
 				cartItems: req.body.items.map((i) => ({
 					menu_item_id: String(i.baseId || i.id),

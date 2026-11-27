@@ -1799,6 +1799,7 @@ function syncCartBillWithApi(items, rawItemTotal) {
 				},
 				body: JSON.stringify({
 					restaurantId: state.cart.restaurantId,
+					restaurantName: state.cart.restaurantName || '',
 					items,
 					cookingRequest: state.cart.cookingRequest || '',
 					couponCode: state.cart.couponCode || '',
