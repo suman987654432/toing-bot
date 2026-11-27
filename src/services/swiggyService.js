@@ -788,8 +788,26 @@ const SwiggyService = {
 	async updateCart(cartData, tid = '', token = '', userId = '') {
 		const url = `https://payments.swiggy.com/api/v3/update-cart`;
 		try {
+			const lat = cartData?.cartLatLong?.lat;
+			const lng = cartData?.cartLatLong?.lng;
+			const addressId = cartData?.address_id;
+
+			const extraHeaders = {};
+			if (lat) {
+				extraHeaders['lat'] = String(lat);
+				extraHeaders['latitude'] = String(lat);
+			}
+			if (lng) {
+				extraHeaders['lng'] = String(lng);
+				extraHeaders['longitude'] = String(lng);
+			}
+			if (addressId) {
+				extraHeaders['addressid'] = String(addressId);
+				extraHeaders['cartaddressid'] = String(addressId);
+			}
+
 			const response = await axios.post(url, cartData, {
-				headers: buildPaymentHeaders(tid, token, userId),
+				headers: buildPaymentHeaders(tid, token, userId, extraHeaders),
 				timeout: 12000,
 			});
 			return {
