@@ -1262,7 +1262,7 @@ router.post('/cart/update', async (req, res) => {
 		const packingCharges = Number(d.total_packing_charges ?? 0);
 		const couponDiscount = Number(d.coupon_discount_total ?? 0);
 		const rewardRow = (d.rendering_details || []).find((r) => r.key === 'offerCashReward');
-		const referralCash = rewardRow ? Math.round(Number(rewardRow.value || 0)) : 0;
+		const referralCash = rewardRow ? Math.abs(Math.round(Number(rewardRow.value || 0))) : Math.abs(Math.round(Number(d.swiggy_money || 0)));
 		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount - referralCash));
 
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
@@ -1768,10 +1768,18 @@ router.post('/tools/claim-refer', async (req, res) => {
 			token
 		} = await getActiveCreds(getTgUserId(req));
 		const result = await SwiggyService.claimReferral(referralCode, tid, token);
+		const revealTitle = result.data?.data?.reveal_data?.title;
+		if (result.success) {
+			return res.json({
+				success: true,
+				message: revealTitle || '₹50 Referral Bonus Claimed Successfully!',
+				data: result.data,
+			});
+		}
 		res.json({
-			success: true,
-			message: '₹50 Referral Bonus Claimed Successfully!',
-			data: result.data || result,
+			success: false,
+			error: result.data?.statusMessage || result.error?.statusMessage || (typeof result.error === 'string' ? result.error : 'Referral claim not eligible on this account'),
+			data: result.data || result.error,
 		});
 	} catch (err) {
 		res.status(500).json({

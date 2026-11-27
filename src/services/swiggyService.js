@@ -1365,14 +1365,18 @@ const SwiggyService = {
 		const url = `https://profile.swiggy.com/api/v1/referral/reveal`;
 		try {
 			const response = await axios.post(url, {
-				code: referralCode || ''
+				campaign_id: 'ToingCampaign',
+				referral_code: String(referralCode || '1130EEDF').trim(),
 			}, {
-				headers: buildDiscHeaders(tid, token),
+				headers: buildDiscHeaders(tid, token, {
+					accept: 'application/json; charset=utf-8',
+				}),
 				timeout: 10000,
 			});
+			const d = response.data || {};
 			return {
-				success: true,
-				data: response.data
+				success: d.statusCode === 0,
+				data: d,
 			};
 		} catch (error) {
 			return {

@@ -1871,16 +1871,24 @@ async function claimFoodCoinDiscount() {
 	}
 	showToast('Claiming ₹50 Food Coins on Swiggy...');
 	try {
-		await fetch('/api/tools/claim-refer', {
+		const res = await fetch('/api/tools/claim-refer', {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
 			},
 			body: JSON.stringify({
-				referralCode: '5G9P5Q'
+				referralCode: '1130EEDF'
 			}),
 		});
-	} catch (e) {}
+		const data = await res.json();
+		if (data.success) {
+			showToast(`⚡ ${data.message || '₹50 Food Coins claimed!'}`);
+		} else {
+			showToast(data.error || 'FC claim not eligible on this account', true);
+		}
+	} catch (e) {
+		showToast('Failed to claim FC', true);
+	}
 	state.cart.fcManuallyToggled = true;
 	cartBillSyncKey = '';
 	updateCartView();
