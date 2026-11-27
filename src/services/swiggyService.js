@@ -819,59 +819,7 @@ const SwiggyService = {
 					break;
 				}
 			}
-			// If live list is empty, supply the real Swiggy Toing coupons from toing_coupon.har
-			if (coupons.length === 0) {
-				coupons = [{
-					code: 'PAYTMNEW',
-					title: 'PAYTMNEW',
-					subtitle: 'Get flat ₹125 cashback using Paytm UPI',
-					description: 'Flat ₹125 cashback on payments above ₹99.',
-					ribbonText: 'CASHBACK',
-					discount: 125
-				}, {
-					code: 'PAYTMUPI',
-					title: 'PAYTMUPI',
-					subtitle: 'Get flat ₹50 cashback using Paytm UPI',
-					description: 'Flat ₹50 cashback on payments above ₹100.',
-					ribbonText: 'CASHBACK',
-					discount: 50
-				}, {
-					code: 'VISAPLATINUMDC',
-					title: 'VISAPLATINUMDC',
-					subtitle: 'Get 15% OFF using Visa Platinum Debit Cards',
-					description: 'Maximum up to ₹60 discount on orders above ₹250.',
-					ribbonText: '15% OFF',
-					discount: 35
-				}, {
-					code: 'VISACLASSICDC',
-					title: 'VISACLASSICDC',
-					subtitle: 'Get 10% OFF using Visa Classic Debit Cards',
-					description: 'Maximum up to ₹50 discount on orders above ₹300.',
-					ribbonText: '10% OFF',
-					discount: 25
-				}, {
-					code: 'AXIS150',
-					title: 'AXIS150',
-					subtitle: 'Get 25% OFF using Axis Bank Delight Debit Cards',
-					description: 'Maximum up to ₹150 discount on orders above ₹400.',
-					ribbonText: '25% OFF',
-					discount: 150
-				}, {
-					code: 'AMAZONPAYBALANCE',
-					title: 'AMAZONPAYBALANCE',
-					subtitle: 'Upto ₹50 cashback with Amazon Pay Balance',
-					description: 'Cashback on Amazon Pay Balance transactions above ₹399.',
-					ribbonText: 'CASHBACK',
-					discount: 50
-				}, {
-					code: 'MBKWALLET',
-					title: 'MBKWALLET',
-					subtitle: 'Up to ₹150 cashback with MobiKwik Wallet',
-					description: 'Assured ₹10 to ₹150 Instant Cashback via Scratch Card.',
-					ribbonText: 'CASHBACK',
-					discount: 50
-				}];
-			}
+			// Only return live coupons from Swiggy (no static/hardcoded coupons)
 			return {
 				success: true,
 				coupons,

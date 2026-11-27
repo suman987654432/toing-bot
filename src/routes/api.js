@@ -1170,6 +1170,7 @@ router.post('/cart/update', async (req, res) => {
 				cutleryComments: String(req.body.cookingRequest || ''),
 				address_id: addressId,
 				restaurantId: String(req.body.restaurantId || ''),
+				couponCode: String(req.body.couponCode || ''),
 				cartItems: req.body.items.map((i) => ({
 					menu_item_id: String(i.baseId || i.id),
 					quantity: Number(i.quantity || 1),
@@ -1180,7 +1181,23 @@ router.post('/cart/update', async (req, res) => {
 			};
 		}
 		const result = await SwiggyService.updateCart(cartPayload, tid, token, userId);
-		const d = result.data?.data || {};
+		let d = result.data?.data || {};
+		let autoAppliedCoupon = null;
+		const itemTotalForBhim = Number(d.cart_subtotal ?? d.item_total ?? (Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0));
+		if (result.success && tid && req.body.autoApplyBhim !== false && !req.body.couponCode && !d.coupon_applied && !d.is_coupon_applied && itemTotalForBhim >= 99) {
+			try {
+				const bhimRes = await SwiggyService.applyCoupon('BHIMNEW', tid, token, userId);
+				const d2 = bhimRes?.data?.data || {};
+				if (bhimRes.success && (d2.is_coupon_applied || d2.coupon_applied === 'BHIMNEW' || Number(d2.coupon_discount_total || 0) > 0)) {
+					d = d2;
+					result.data = bhimRes.data;
+					autoAppliedCoupon = {
+						code: d2.coupon_applied || 'BHIMNEW',
+						discount: Number(d2.coupon_discount_total || 50),
+					};
+				}
+			} catch (e) {}
+		}
 		const deliveryRow = (d.rendering_details || []).find(
 			(r) => /delivery fee/i.test(String(r.display_text || '')) || ['delivery_charges', 'free_non_super_delivery_exclusive', 'delivery_fee'].includes(String(r.key || '')));
 		const rawDelivLabel = String(deliveryRow?.display_text || '').replace(/^"+|"+$/g, '').trim();
@@ -1194,11 +1211,13 @@ router.post('/cart/update', async (req, res) => {
 			taxes: Number(d.total_tax ?? d.taxes?.GST ?? 0),
 			packingCharges: Number(d.total_packing_charges ?? 0),
 			couponDiscount: Number(d.coupon_discount_total ?? 0),
+			couponApplied: d.coupon_applied || '',
 			orderTotal: Number(d.order_total ?? 0),
 		} : null;
 		res.json({
 			...result,
-			bill
+			bill,
+			autoAppliedCoupon
 		});
 	} catch (err) {
 		res.status(500).json({
@@ -1252,23 +1271,29 @@ router.post('/coupons/apply', async (req, res) => {
 			token,
 			userId
 		} = await getActiveCreds(getTgUserId(req));
-		// Call live apply coupon endpoint
-		if (tid) {
-			try {
-				await SwiggyService.applyCoupon(code, tid, token, userId);
-			} catch (e) {}
+		if (!code) {
+			return res.status(400).json({ success: false, error: 'Enter a coupon code' });
 		}
-		// Determine coupon discount
-		let discount = 50;
-		if (code.includes('125') || code === 'PAYTMNEW') discount = 125;
-		else if (code.includes('150') || code === 'AXIS150' || code === 'MBKWALLET') discount = 150;
-		else if (code.includes('60') || code === 'VISAPLATINUMDC') discount = 60;
-		else if (code === 'VISACLASSICDC') discount = 35;
-		res.json({
-			success: true,
-			coupon_code: code,
-			discount,
-			message: `${code} applied successfully! Saved ₹${discount} on your Toing order.`,
+		if (!tid) {
+			return res.status(400).json({ success: false, error: 'Please login to an account first' });
+		}
+		// Call live apply coupon endpoint (no static/fake fallback)
+		const swiggyRes = await SwiggyService.applyCoupon(code, tid, token, userId);
+		const d = swiggyRes.data?.data || {};
+		const statusCode = swiggyRes.data?.statusCode;
+		if (swiggyRes.success && (statusCode === 0 || d.is_coupon_applied || Number(d.coupon_discount_total || 0) > 0)) {
+			const discount = Number(d.coupon_discount_total || 50);
+			const appliedCode = d.coupon_applied || code;
+			return res.json({
+				success: true,
+				coupon_code: appliedCode,
+				discount,
+				message: `${appliedCode} applied successfully! Saved ₹${discount} on your Toing order.`,
+			});
+		}
+		return res.json({
+			success: false,
+			error: swiggyRes.data?.statusMessage || swiggyRes.error?.statusMessage || 'Coupon not applicable on this account/order',
 		});
 	} catch (err) {
 		res.status(500).json({

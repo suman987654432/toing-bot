@@ -689,7 +689,6 @@ async function deleteAddress(addressId) {
 function openAddLinkModal() {
 	document.getElementById('modalAddLink').classList.remove('hidden');
 }
-
 let areaSuggestTimer = null;
 
 function setManualGpsStatus(msg, isErr = false) {
@@ -705,7 +704,6 @@ function setManualGpsStatus(msg, isErr = false) {
 	el.style.background = isErr ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.12)';
 	el.classList.remove('hidden');
 }
-
 async function applyFetchedGpsCoords(lat, lng) {
 	state.manualLat = Number(lat);
 	state.manualLng = Number(lng);
@@ -734,47 +732,74 @@ function fetchCurrentGpsLocation() {
 			btn.textContent = '📍 Fetch Current Location (GPS)';
 		}
 	};
-
 	const tryBrowserGeo = () => {
 		if (!navigator.geolocation) {
 			done();
 			setManualGpsStatus('⚠️ GPS unavailable here — type Area / Colony below to pick exact location', true);
 			return;
 		}
-		navigator.geolocation.getCurrentPosition(
-			async (pos) => {
+		navigator.geolocation.getCurrentPosition(async (pos) => {
 				await applyFetchedGpsCoords(pos.coords.latitude, pos.coords.longitude);
 				done();
 			},
 			(err) => {
 				done();
-				const msg = err?.code === 1
-					? '⚠️ Location permission denied — allow GPS or type Area / Colony below'
-					: '⚠️ GPS unavailable — type Area / Colony below to pick exact location';
+				const msg = err?.code === 1 ? '⚠️ Location permission denied — allow GPS or type Area / Colony below' : '⚠️ GPS unavailable — type Area / Colony below to pick exact location';
 				setManualGpsStatus(msg, true);
-			},
-			{ enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 }
-		);
+			}, {
+				enableHighAccuracy: false,
+				maximumAge: 60000,
+				timeout: 10000
+			});
 	};
-
 	const lm = window.Telegram?.WebApp?.LocationManager;
 	if (lm && typeof lm.init === 'function' && typeof lm.getLocation === 'function') {
+		let settled = false;
+		const guard = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				tryBrowserGeo();
+			}
+		}, 2500);
 		const runTgLoc = () => {
 			if (lm.isLocationAvailable === false) {
-				tryBrowserGeo();
-				return;
-			}
-			lm.getLocation(async (loc) => {
-				if (loc && loc.latitude && loc.longitude) {
-					await applyFetchedGpsCoords(loc.latitude, loc.longitude);
-					done();
-				} else {
+				if (!settled) {
+					settled = true;
+					clearTimeout(guard);
 					tryBrowserGeo();
 				}
-			});
+				return;
+			}
+			try {
+				lm.getLocation(async (loc) => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(guard);
+					if (loc && loc.latitude && loc.longitude) {
+						await applyFetchedGpsCoords(loc.latitude, loc.longitude);
+						done();
+					} else {
+						tryBrowserGeo();
+					}
+				});
+			} catch (e) {
+				if (!settled) {
+					settled = true;
+					clearTimeout(guard);
+					tryBrowserGeo();
+				}
+			}
 		};
 		if (lm.isInited) runTgLoc();
-		else lm.init(() => runTgLoc());
+		else {
+			try {
+				lm.init(() => runTgLoc());
+			} catch (e) {
+				settled = true;
+				clearTimeout(guard);
+				tryBrowserGeo();
+			}
+		}
 		return;
 	}
 	tryBrowserGeo();
@@ -1736,6 +1761,8 @@ function syncCartBillWithApi(items, rawItemTotal) {
 					restaurantId: state.cart.restaurantId,
 					items,
 					cookingRequest: state.cart.cookingRequest || '',
+					couponCode: state.cart.couponCode || '',
+					autoApplyBhim: !state.cart.couponManuallyRemoved,
 					lat: state.selectedAddress?.lat,
 					lng: state.selectedAddress?.lng,
 					addressId: state.selectedAddressId,
@@ -1745,6 +1772,12 @@ function syncCartBillWithApi(items, rawItemTotal) {
 			if (data.success && data.bill) {
 				cartBillSyncKey = key;
 				state.cart.liveBill = data.bill;
+				if (data.autoAppliedCoupon && data.autoAppliedCoupon.code && !state.cart.couponCode) {
+					state.cart.couponCode = data.autoAppliedCoupon.code;
+					state.cart.discount = Number(data.autoAppliedCoupon.discount || 50);
+					showToast(`🎉 ${state.cart.couponCode} auto-applied! Saved ₹${state.cart.discount}`);
+					fetchCoupons();
+				}
 				renderCartBill(rawItemTotal);
 			}
 		} catch (e) {}
@@ -1842,11 +1875,18 @@ async function fetchCoupons() {
 	const container = document.getElementById('couponList');
 	if (!container) return;
 	try {
-		const res = await fetch('/api/coupons');
+		const items = Object.values(state.cart.items || {});
+		const cartValue = Math.max(0, Math.round(items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0)));
+		const params = new URLSearchParams();
+		if (state.cart.restaurantId) params.set('restaurantId', state.cart.restaurantId);
+		if (cartValue > 0) params.set('cartValue', String(cartValue));
+		if (state.selectedAddress?.lat) params.set('lat', String(state.selectedAddress.lat));
+		if (state.selectedAddress?.lng) params.set('lng', String(state.selectedAddress.lng));
+		const res = await fetch(`/api/coupons?${params.toString()}`);
 		const data = await res.json();
 		const coupons = data.coupons || [];
 		if (coupons.length === 0) {
-			container.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:8px;">No coupons available.</div>';
+			container.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:8px;">No live coupons available for this order.</div>';
 			return;
 		}
 		let html = '';
