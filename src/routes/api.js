@@ -1261,7 +1261,9 @@ router.post('/cart/update', async (req, res) => {
 		const taxes = Number(d.total_tax ?? d.taxes?.GST ?? 0);
 		const packingCharges = Number(d.total_packing_charges ?? 0);
 		const couponDiscount = Number(d.coupon_discount_total ?? 0);
-		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount));
+		const rewardRow = (d.rendering_details || []).find((r) => r.key === 'offerCashReward');
+		const referralCash = rewardRow ? Math.round(Number(rewardRow.value || 0)) : 0;
+		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount - referralCash));
 
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
 			itemTotal: itemSubtotal,
@@ -1273,6 +1275,7 @@ router.post('/cart/update', async (req, res) => {
 			taxes,
 			packingCharges,
 			couponDiscount,
+			referralCash,
 			couponApplied: d.coupon_applied || '',
 			orderTotal: isFreeDelivery && rawDeliveryFee > 0 ? calcOrderTotal : Number(d.order_total ?? calcOrderTotal),
 		} : null;

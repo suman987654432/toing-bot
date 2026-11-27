@@ -1693,12 +1693,12 @@ function renderCartBill(rawItemTotal) {
 	const live = state.cart.liveBill;
 	const deliveryFee = live ? Number(live.deliveryFee || 0) : null;
 	const taxes = live ? Number(live.taxes || 0) : null;
-	const couponDiscount = (live && live.couponDiscount > 0) ? Number(live.couponDiscount) : Number(state.cart.discount || 0);
-	if (state.cart.couponCode && couponDiscount > 0) {
+	const couponDiscount = live ? Number(live.couponDiscount || 0) : Number(state.cart.discount || 0);
+	if (live) {
 		state.cart.discount = couponDiscount;
 	}
-	const fcDiscount = state.cart.fcClaimed ? 50 : 0;
-	const toPay = live && live.orderTotal > 0 && !state.cart.fcManuallyToggled && !state.cart.couponCode ? Math.max(0, Math.round(Number(live.orderTotal) - fcDiscount)) : Math.max(0, Math.round(rawItemTotal + (deliveryFee || 0) + (taxes || 0) - couponDiscount - fcDiscount));
+	const fcDiscount = live ? Number(live.referralCash || 0) : (state.cart.fcClaimed ? 50 : 0);
+	const toPay = (live && live.orderTotal > 0) ? Math.round(Number(live.orderTotal)) : Math.max(0, Math.round(rawItemTotal + (deliveryFee || 0) + (taxes || 0) - couponDiscount - fcDiscount));
 	const origTotalEl = document.getElementById('billOrigItemTotal');
 	if (origTotalEl) {
 		if (live && live.strikeOffItemTotal) {
@@ -1745,7 +1745,7 @@ function renderCartBill(rawItemTotal) {
 	}
 	const fcBtnText = document.getElementById('claimFcBtnText');
 	if (fcBtnText) {
-		fcBtnText.textContent = state.cart.fcClaimed ? 'Claimed ₹50 FC ✔' : 'Claim ₹50 FC';
+		fcBtnText.textContent = live ? (fcDiscount > 0 ? `Claimed ₹${fcDiscount} FC ✔` : '₹0 FC on Account') : (state.cart.fcClaimed ? 'Claimed ₹50 FC ✔' : 'Claim ₹50 FC');
 	}
 	// Update Apply Coupon card & BHIM ON/OFF badge
 	const cTitle = document.getElementById('couponCardTitle');
@@ -1754,7 +1754,7 @@ function renderCartBill(rawItemTotal) {
 	if (cTitle && cSub) {
 		if (state.cart.couponCode) {
 			cTitle.textContent = `Coupon '${state.cart.couponCode}' applied`;
-			cSub.textContent = `Saved ₹${couponDiscount || state.cart.discount || 50} on this order`;
+			cSub.textContent = couponDiscount > 0 ? `Saved ₹${couponDiscount} on this order` : (state.cart.couponCode === 'BHIMNEW' ? 'Pay via BHIM UPI app for ₹50 cashback/offer' : 'Applied on Swiggy');
 		} else if (state.cart.bhimStatus === 'off') {
 			cTitle.textContent = 'Apply coupon';
 			cSub.textContent = state.cart.bhimReason || 'BHIM ₹50 not available on this account';
@@ -1864,14 +1864,22 @@ function toggleCouponSection() {
 	}
 }
 
-function claimFoodCoinDiscount() {
-	state.cart.fcManuallyToggled = true;
-	state.cart.fcClaimed = !state.cart.fcClaimed;
-	if (state.cart.fcClaimed) {
-		showToast('⚡ ₹50 Food Coins claimed!');
-	} else {
-		showToast('Food Coin claim removed');
+async function claimFoodCoinDiscount() {
+	if (!state.activeAccount) {
+		showToast('Please login to an account first', true);
+		return;
 	}
+	showToast('Claiming ₹50 Food Coins on Swiggy...');
+	try {
+		await fetch('/api/tools/claim-refer', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ referralCode: '5G9P5Q' }),
+		});
+	} catch (e) {}
+	state.cart.fcManuallyToggled = true;
+	state.cart.fcClaimed = true;
+	cartBillSyncKey = '';
 	updateCartView();
 }
 
