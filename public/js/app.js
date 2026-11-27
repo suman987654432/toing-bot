@@ -732,7 +732,7 @@ function fetchCurrentGpsLocation() {
 			btn.textContent = '📍 Fetch Current Location (GPS)';
 		}
 	};
-	const tryBrowserGeo = () => {
+	const tryBrowserGeo = (highAccuracy = true) => {
 		if (!navigator.geolocation) {
 			done();
 			setManualGpsStatus('⚠️ GPS unavailable here — type Area / Colony below to pick exact location', true);
@@ -743,13 +743,18 @@ function fetchCurrentGpsLocation() {
 				done();
 			},
 			(err) => {
+				// If high-accuracy GPS times out or is unavailable indoors, fall back once to coarse location
+				if (highAccuracy && err?.code !== 1) {
+					tryBrowserGeo(false);
+					return;
+				}
 				done();
 				const msg = err?.code === 1 ? '⚠️ Location permission denied — allow GPS or type Area / Colony below' : '⚠️ GPS unavailable — type Area / Colony below to pick exact location';
 				setManualGpsStatus(msg, true);
 			}, {
-				enableHighAccuracy: false,
-				maximumAge: 60000,
-				timeout: 10000
+				enableHighAccuracy: highAccuracy,
+				maximumAge: highAccuracy ? 0 : 30000,
+				timeout: highAccuracy ? 8000 : 8000
 			});
 	};
 	const lm = window.Telegram?.WebApp?.LocationManager;
