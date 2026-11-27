@@ -2680,9 +2680,10 @@ async function openOrderDetails(orderId) {
 		const items = ord.order_items || ord.items || cached?.items || [];
 		const statusMsg = track.message || track.statusMessage || data.trackData?.statusMessage || '';
 		// Delivery Partner details
-		const dp = ord.delivery_boy || track.delivery_boy || track.de_details || {};
-		const dpName = dp.name || '';
-		const dpPhone = dp.mobile || dp.phone || '';
+		const ordDp = ord.delivery_boy || {};
+		const trackDp = track.delivery_boy || track.de_details || {};
+		const dpName = ordDp.name || trackDp.name || '';
+		const dpPhone = ordDp.mobile || ordDp.phone || trackDp.mobile || trackDp.phone || '';
 		const dpText = dpName ? `${dpName}${dpPhone ? ' | ' + dpPhone : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
 		// Tracking link — deep link into our Telegram bot
 		const trackUrl = `https://t.me/Toingpro_bot?start=track_${orderId}`;
@@ -2945,9 +2946,10 @@ async function openLiveTrackModal(orderId) {
 		const cleanStatus = rawStatus.replace(/_/g, ' ');
 		const restName = ord.restaurant_name || 'Toing Order';
 		const statusMsg = track.message || track.statusMessage || data.trackData?.statusMessage || '';
-		const dp = ord.delivery_boy || track.delivery_boy || track.de_details || {};
-		const dpName = dp.name || '';
-		const dpPhone = dp.mobile || dp.phone || '';
+		const ordDp = ord.delivery_boy || {};
+		const trackDp = track.delivery_boy || track.de_details || {};
+		const dpName = ordDp.name || trackDp.name || '';
+		const dpPhone = ordDp.mobile || ordDp.phone || trackDp.mobile || trackDp.phone || '';
 		const isCancelled = /CANCEL|FAIL|REJECT/.test(rawStatus);
 		const stepIdx = /DELIVERED/.test(rawStatus) ? 3
 			: /PICKED|OUT_FOR|ARRIVING|DISPATCH/.test(rawStatus) ? 2

@@ -291,14 +291,18 @@ const WalletRepo = {
     return { success: true, balance: w.balance, adjusted: actualDelta };
   },
 
-  async listUsers(page = 1, limit = 6) {
+  async listUsers(page = 1, limit = 6, onlyActive = false) {
     const p = Math.max(1, Number(page || 1));
     const lim = Math.max(1, Number(limit || 6));
 
     if (mongoose.connection.readyState === 1) {
-      const [totalUsers, users, agg] = await Promise.all([
+      const filter = onlyActive
+        ? { $or: [{ totalOrders: { $gt: 0 } }, { totalDeposited: { $gt: 0 } }, { balance: { $gt: 0 } }] }
+        : {};
+      const [totalUsers, filteredCount, users, agg] = await Promise.all([
         WalletModel.countDocuments({}),
-        WalletModel.find({}).sort({ updatedAt: -1 }).skip((p - 1) * lim).limit(lim).lean(),
+        onlyActive ? WalletModel.countDocuments(filter) : WalletModel.countDocuments({}),
+        WalletModel.find(filter).sort({ totalOrders: -1, updatedAt: -1 }).skip((p - 1) * lim).limit(lim).lean(),
         WalletModel.aggregate([
           {
             $group: {
@@ -313,25 +317,31 @@ const WalletRepo = {
       return {
         users,
         totalUsers,
+        filteredCount,
         totalBalance: Math.round(Number(totals.totalBalance || 0) * 100) / 100,
         totalOrders: Number(totals.totalOrders || 0),
         page: p,
-        totalPages: Math.max(1, Math.ceil(totalUsers / lim)),
+        totalPages: Math.max(1, Math.ceil(filteredCount / lim)),
       };
     }
 
     const all = Array.from(memWallets.values());
+    const filtered = onlyActive
+      ? all.filter((u) => Number(u.totalOrders || 0) > 0 || Number(u.totalDeposited || 0) > 0 || Number(u.balance || 0) > 0)
+      : all;
     const totalUsers = all.length;
+    const filteredCount = filtered.length;
     const totalBalance = Math.round(all.reduce((s, u) => s + Number(u.balance || 0), 0) * 100) / 100;
     const totalOrders = all.reduce((s, u) => s + Number(u.totalOrders || 0), 0);
-    const users = all.slice((p - 1) * lim, p * lim);
+    const users = filtered.slice((p - 1) * lim, p * lim);
     return {
       users,
       totalUsers,
+      filteredCount,
       totalBalance,
       totalOrders,
       page: p,
-      totalPages: Math.max(1, Math.ceil(totalUsers / lim)),
+      totalPages: Math.max(1, Math.ceil(filteredCount / lim)),
     };
   },
 

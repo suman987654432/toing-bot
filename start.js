@@ -32,7 +32,8 @@ setTimeout(() => {
       console.log('🔗 URL:', tunnelUrl);
       console.log('====================================================');
 
-      // Update .env
+      // Update runtime env & .env
+      process.env.WEBAPP_URL = tunnelUrl;
       try {
         let envContent = fs.readFileSync('.env', 'utf8');
         envContent = envContent.replace(/WEBAPP_URL=.*(\r?\n|$)/, `WEBAPP_URL=${tunnelUrl}$1`);

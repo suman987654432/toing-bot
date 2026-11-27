@@ -1589,19 +1589,51 @@ const SwiggyService = {
 		const url = `https://disc.swiggy.com/api/v2/track/card`;
 		try {
 			const response = await axios.post(url, {
-				order_id: String(orderId)
+				fetchTrackWidgets: 1,
+				orderId: String(orderId),
+				orderType: 'FOOD',
+				showRateApp: 0
 			}, {
 				headers: buildDiscHeaders(tid, token),
+				responseType: 'arraybuffer',
 				timeout: 10000,
 			});
+			const buf = Buffer.isBuffer(response.data) ? response.data : Buffer.from(String(response.data || ''));
+			const rawStr = buf.toString('utf8');
+			// If JSON response
+			if (rawStr.trim().startsWith('{')) {
+				return { success: true, data: JSON.parse(rawStr) };
+			}
+			const clean = rawStr.replace(/[^\x20-\x7E\n]/g, ' ').replace(/\s+/g, ' ');
+			// Extract Delivery Partner phone (cta-call-de)
+			const deMatch = clean.match(/call-intent\?phoneNumber=([0-9+]{8,15})[^]{0,140}cta-call-de/);
+			const rxMatch = clean.match(/call-intent\?phoneNumber=([0-9+]{8,15})[^]{0,140}cta-restaurant/);
+			const statusJsonMatch = clean.match(/\{"status-message":"([^"]*)".*?"substatus-message":"([^"]*)".*?"eta_title":"([^"]*)"/);
+			const statusMsg = statusJsonMatch?.[1] || '';
+			const subMsg = statusJsonMatch?.[2] || '';
+			const etaTitle = statusJsonMatch?.[3] || '';
+			const etaText = etaTitle ? `${etaTitle} mins` : '';
 			return {
 				success: true,
-				data: response.data
+				data: {
+					data: {
+						order_status: statusMsg || '',
+						message: [subMsg, etaText ? `ETA: ${etaText}` : ''].filter(Boolean).join(' • '),
+						eta: etaText,
+						delivery_boy: {
+							mobile: deMatch?.[1] || '',
+						},
+						de_details: {
+							mobile: deMatch?.[1] || '',
+						},
+						restaurant_phone: rxMatch?.[1] || '',
+					}
+				}
 			};
 		} catch (error) {
 			return {
 				success: false,
-				error: error.response?.data || error.message
+				error: error.response?.data?.statusMessage || error.message
 			};
 		}
 	},

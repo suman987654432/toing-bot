@@ -23,6 +23,7 @@ const initBot = (webAppUrl) => {
 
   try {
     let currentWebAppUrl = webAppUrl || process.env.WEBAPP_URL || 'http://localhost:5000';
+    const getLiveWebAppUrl = () => process.env.WEBAPP_URL || currentWebAppUrl;
     bot = new BotClass(token);
 
     const stripButtonStyles = (markup) => {
@@ -154,7 +155,7 @@ const initBot = (webAppUrl) => {
         `• *ORDER FEES* : ₹${orderFee}`;
 
       const keyboard = [
-        [{ text: '🚀 Open Toing Pro', web_app: { url: currentWebAppUrl }, style: 'success' }],
+        [{ text: '🚀 Open Toing Pro', web_app: { url: getLiveWebAppUrl() }, style: 'success' }],
         [
           { text: '👥 Saved Accounts', callback_data: 'view_accounts', style: 'primary' },
           { text: '⚡ Tools & Claims', callback_data: 'tools_menu', style: 'primary' },
@@ -163,6 +164,7 @@ const initBot = (webAppUrl) => {
           { text: '👛 Wallet', callback_data: 'wallet_home', style: 'primary' },
           { text: '🛒 Buy Account', url: 'https://t.me/CodeAddabot', style: 'primary' },
         ],
+        [{ text: '💬 Support', url: 'https://t.me/Sumitearnin_g', style: 'primary' }],
       ];
 
       if (isAdminUser(tgUid)) {
@@ -196,9 +198,10 @@ const initBot = (webAppUrl) => {
         const restName = ord?.restaurant_name || 'Toing Order';
         const total = ord?.order_total ?? ord?.net_total ?? '';
         const statusMsg = track?.message || track?.statusMessage || '';
-        const dp = ord?.delivery_boy || track?.delivery_boy || track?.de_details || {};
-        const dpName = dp.name || '';
-        const dpPhone = dp.mobile || dp.phone || '';
+        const ordDp = ord?.delivery_boy || {};
+        const trackDp = track?.delivery_boy || track?.de_details || {};
+        const dpName = ordDp.name || trackDp.name || '';
+        const dpPhone = ordDp.mobile || ordDp.phone || trackDp.mobile || trackDp.phone || '';
         const dpLine = dpName ? `${dpName}${dpPhone ? ` (\`${dpPhone}\`)` : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
         const items = ord?.order_items || ord?.items || [];
         const itemLines = items.slice(0, 8).map((it) => `• ${it.name} × ${it.quantity || 1}`).join('\n');
@@ -216,7 +219,8 @@ const initBot = (webAppUrl) => {
           text += `\n⚠️ _Account session login nahi mila — live status ke liye Mini App me account login karein._`;
         }
 
-        const trackMiniAppUrl = `${currentWebAppUrl}${currentWebAppUrl.includes('?') ? '&' : '?'}track=${encodeURIComponent(orderId)}`;
+        const liveBase = getLiveWebAppUrl();
+        const trackMiniAppUrl = `${liveBase}${liveBase.includes('?') ? '&' : '?'}track=${encodeURIComponent(orderId)}`;
         const keyboard = [
           [
             { text: '🔄 Refresh Status', callback_data: `track_ref_${orderId}`, style: 'primary' },
@@ -438,7 +442,7 @@ const initBot = (webAppUrl) => {
     };
 
     const renderUsersStatus = async (chatId, messageId, page = 1) => {
-      const data = await WalletRepo.listUsers(page, 6);
+      const data = await WalletRepo.listUsers(page, 6, true);
       const userButtons = [];
       const lines = await Promise.all(
         (data.users || []).map(async (u, idx) => {
@@ -463,10 +467,10 @@ const initBot = (webAppUrl) => {
       );
 
       const text =
-        `👥 *USERS STATUS* (Page ${data.page}/${data.totalPages})\n` +
-        `Total Users: *${data.totalUsers}* | Total Bal: *₹${data.totalBalance}* | Orders: *${data.totalOrders}*\n\n` +
-        (lines.length ? lines.join('\n') : '_No users recorded yet._') +
-        `\n\n_Tap any user button below to view full UTR & Spend history._`;
+        `👥 *ACTIVE / ORDERED USERS* (Page ${data.page}/${data.totalPages})\n` +
+        `Showing: *${data.filteredCount}* / ${data.totalUsers} Users | Bal: *₹${data.totalBalance}* | Orders: *${data.totalOrders}*\n\n` +
+        (lines.length ? lines.join('\n') : '_No active/ordered users yet._') +
+        `\n\n_Tap any user or click Search User ID below._`;
 
       const navRow = [];
       if (data.page > 1) navRow.push({ text: '◀️ Prev', callback_data: `adm_users_${data.page - 1}`, style: 'primary' });
@@ -477,7 +481,10 @@ const initBot = (webAppUrl) => {
         keyboard.push(userButtons.slice(i, i + 2));
       }
       if (navRow.length) keyboard.push(navRow);
-      keyboard.push([{ text: '🔄 Refresh', callback_data: `adm_users_${data.page}`, style: 'success' }]);
+      keyboard.push([
+        { text: '🔎 Search User ID', callback_data: 'adm_search_user', style: 'primary' },
+        { text: '🔄 Refresh', callback_data: `adm_users_${data.page}`, style: 'success' },
+      ]);
       keyboard.push([{ text: '🔙 Back to Admin', callback_data: 'adm_home', style: 'danger' }]);
 
       await sendOrEdit(chatId, messageId, text, keyboard);
@@ -777,6 +784,11 @@ const initBot = (webAppUrl) => {
             adminPending.delete(uid);
             await SettingsRepo.update({ orderFee: Number(fee), minDeposit: Number(minDep) });
             await renderAdminHome(chatId, messageId);
+          } else if (data === 'adm_search_user') {
+            adminPending.set(uid, { action: 'await_user_search' });
+            await sendOrEdit(chatId, messageId, '🔎 *SEARCH USER BY ID*\n\nTelegram User ID bhejein (e.g. `1649428638`):', [
+              [{ text: '🔙 Back to Users', callback_data: 'adm_users_1', style: 'danger' }],
+            ]);
           } else if (data.startsWith('adm_users_')) {
             adminPending.delete(uid);
             const page = Number(data.replace('adm_users_', '')) || 1;
@@ -866,6 +878,14 @@ const initBot = (webAppUrl) => {
           await SettingsRepo.update({ forceJoinChannel: ch, forceJoinUrl: url, forceJoinEnabled: true });
           adminPending.delete(uid);
           await renderChannelSetup(uid, null);
+        } else if (pending.action === 'await_user_search') {
+          const targetUid = text.replace(/[^a-zA-Z0-9_-]/g, '');
+          if (!targetUid) {
+            await tgApi('sendMessage', { chat_id: uid, text: '❌ Invalid User ID. Please send a valid Telegram User ID.' });
+            return;
+          }
+          adminPending.delete(uid);
+          await renderUserDetail(uid, null, targetUid);
         } else if (pending.action === 'await_wallet_uid') {
           const targetUid = text.replace(/[^a-zA-Z0-9_-]/g, '');
           if (!targetUid) {
