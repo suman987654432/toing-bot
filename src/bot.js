@@ -5,6 +5,7 @@ const { AccountRepo } = require('./models/Account');
 const { WalletRepo } = require('./models/Wallet');
 const { SettingsRepo, isAdminUser } = require('./models/Settings');
 const BharatPeService = require('./services/bharatpeService');
+const SwiggyService = require('./services/swiggyService');
 
 let bot = null;
 const adminPending = new Map(); // adminTgId -> { action, mode, targetUid }
@@ -169,6 +170,67 @@ const initBot = (webAppUrl) => {
       }
 
       await sendOrEdit(chatId, messageId, welcomeText, keyboard);
+    };
+
+    const sendTrackOrderCard = async (chatId, tgUid, orderId, messageId = null) => {
+      try {
+        let acc = await AccountRepo.getActive(tgUid);
+        if (!acc || (!acc.tid && !acc.token)) {
+          const allAccs = await AccountRepo.getAll(tgUid);
+          acc = (allAccs || []).find((a) => a.tid || a.token) || acc;
+        }
+        let ord = null;
+        let track = null;
+        if (acc && (acc.tid || acc.token)) {
+          try {
+            const sRes = await SwiggyService.getSingleOrder(orderId, acc.tid, acc.token);
+            ord = sRes.data?.data?.orders?.[0] || sRes.data?.data || null;
+          } catch (e) {}
+          try {
+            const tRes = await SwiggyService.getTrackCard(orderId, acc.tid, acc.token);
+            track = tRes.data?.data || tRes.data || null;
+          } catch (e) {}
+        }
+
+        const status = String(track?.order_status || ord?.order_status || 'CHECKING').replace(/_/g, ' ').toUpperCase();
+        const restName = ord?.restaurant_name || 'Toing Order';
+        const total = ord?.order_total ?? ord?.net_total ?? '';
+        const statusMsg = track?.message || track?.statusMessage || '';
+        const dp = ord?.delivery_boy || track?.delivery_boy || track?.de_details || {};
+        const dpName = dp.name || '';
+        const dpPhone = dp.mobile || dp.phone || '';
+        const dpLine = dpName ? `${dpName}${dpPhone ? ` (\`${dpPhone}\`)` : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
+        const items = ord?.order_items || ord?.items || [];
+        const itemLines = items.slice(0, 8).map((it) => `• ${it.name} × ${it.quantity || 1}`).join('\n');
+
+        let text =
+          `🛵 *LIVE ORDER TRACKING*\n\n` +
+          `🆔 *Order ID:* \`#${orderId}\`\n` +
+          `🍽 *Restaurant:* ${restName}\n` +
+          `📍 *Status:* *${status}*\n` +
+          `🚴 *Delivery Partner:* ${dpLine}\n`;
+        if (total !== '') text += `💰 *Total:* ₹${total}\n`;
+        if (statusMsg) text += `\n💬 _${statusMsg}_\n`;
+        if (itemLines) text += `\n📦 *Items:*\n${itemLines}\n`;
+        if (!acc || (!acc.tid && !acc.token)) {
+          text += `\n⚠️ _Account session login nahi mila — live status ke liye Mini App me account login karein._`;
+        }
+
+        const trackMiniAppUrl = `${currentWebAppUrl}${currentWebAppUrl.includes('?') ? '&' : '?'}track=${encodeURIComponent(orderId)}`;
+        const keyboard = [
+          [
+            { text: '🔄 Refresh Status', callback_data: `track_ref_${orderId}`, style: 'primary' },
+            { text: '🚀 Open in Mini App', web_app: { url: trackMiniAppUrl }, style: 'success' },
+          ],
+          [{ text: '🏠 Main Menu', callback_data: 'wallet_back_start', style: 'primary' }],
+        ];
+        await sendOrEdit(chatId, messageId, text, keyboard);
+      } catch (e) {
+        await sendOrEdit(chatId, messageId, `❌ Tracking fetch karne me error aaya: ${e.message}`, [
+          [{ text: '🔄 Retry', callback_data: `track_ref_${orderId}`, style: 'primary' }],
+          [{ text: '🏠 Main Menu', callback_data: 'wallet_back_start', style: 'primary' }],
+        ]);
+      }
     };
 
     const renderWalletHome = async (chatId, uid, messageId = null) => {
@@ -529,6 +591,15 @@ const initBot = (webAppUrl) => {
         await sendForceJoinPrompt(tgUid, null, fc.cfg, fc.channelUrl);
         return;
       }
+      const rawText = String(ctx.message?.text || '');
+      const startParam = String(ctx.match || rawText.split(/\s+/)[1] || '').trim();
+      if (startParam.startsWith('track_')) {
+        const trackOrderId = startParam.slice('track_'.length).trim();
+        if (trackOrderId) {
+          await sendTrackOrderCard(tgUid, tgUid, trackOrderId);
+          return;
+        }
+      }
       await sendStartMenu(tgUid, tgUid);
     });
 
@@ -567,6 +638,14 @@ const initBot = (webAppUrl) => {
         } else if (data === 'wallet_back_start') {
           walletPending.delete(uid);
           await sendStartMenu(chatId, uid, messageId);
+        } else if (data.startsWith('track_ref_')) {
+          const trackOrderId = data.slice('track_ref_'.length).trim();
+          if (trackOrderId) {
+            await sendTrackOrderCard(chatId, uid, trackOrderId, messageId);
+          }
+          if (ctx.answerCallbackQuery) {
+            await ctx.answerCallbackQuery({ text: '🔄 Status updated!' }).catch(() => {});
+          }
         } else if (data === 'wallet_deposit') {
           await renderDepositPrompt(chatId, uid, messageId);
         } else if (data.startsWith('dep_can_')) {

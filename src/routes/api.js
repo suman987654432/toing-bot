@@ -75,7 +75,8 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		const payText = /cash|cod/i.test(rawPm) ? 'ᴄᴏᴅ' : (/upi/i.test(rawPm) ? 'ᴜᴘɪ' : toSmallCaps(rawPm));
 		const rawStatus = trackData?.order_status || ord.order_status || 'Order Received!';
 		const statusText = toSmallCaps(rawStatus.replace(/_/g, ' '));
-		const trackUrl = trackData?.tracking_url || trackData?.share_url || ord.tracking_url || `https://www.swiggy.com/track-order/${orderId}`;
+		const botUser = String(process.env.BOT_USERNAME || 'Toingpro_bot').replace(/^@/, '');
+		const trackUrl = `https://t.me/${botUser}?start=track_${orderId}`;
 		const items = ord.order_items || ord.items || sessionOrder?.items || [];
 		const itemLines = items.map((it) => {
 			const qty = it.quantity || 1;
@@ -110,11 +111,22 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 			recName ? `• ʀᴇᴄᴇɪᴠᴇʀ: ${recName}` : null,
 			recPhone ? `• ᴘʜᴏɴᴇ: ${recPhone}` : null, ``, `#toing`
 		].filter((x) => x !== null);
-		await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+		const webAppBase = String(process.env.WEBAPP_URL || '').trim();
+		const msgPayload = {
 			chat_id: chatId,
 			text: lines.join('\n'),
 			disable_web_page_preview: true,
-		}, {
+		};
+		if (webAppBase.startsWith('https://')) {
+			const sep = webAppBase.includes('?') ? '&' : '?';
+			msgPayload.reply_markup = {
+				inline_keyboard: [[{
+					text: '🎯 Track Order Live',
+					web_app: { url: `${webAppBase}${sep}track=${encodeURIComponent(orderId)}` }
+				}]]
+			};
+		}
+		await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, msgPayload, {
 			timeout: 8000
 		});
 	} catch (e) {

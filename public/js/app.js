@@ -90,7 +90,21 @@ document.addEventListener('DOMContentLoaded', () => {
 		const btnSendOtpText = document.getElementById('btnSendOtpText');
 		if (btnSendOtpText) btnSendOtpText.textContent = 'Verify OTP';
 	}
-	Promise.all([loadAccounts(), loadAddresses(), loadWallet()]);
+	Promise.all([loadAccounts(), loadAddresses(), loadWallet()]).then(() => {
+		const urlParams = new URLSearchParams(window.location.search);
+		let trackId = urlParams.get('track') || '';
+		const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param || '';
+		if (!trackId && startParam.startsWith('track_')) {
+			trackId = startParam.slice('track_'.length).trim();
+		}
+		if (trackId) {
+			switchTab('orders');
+			setTimeout(() => {
+				openOrderDetails(trackId);
+				openLiveTrackModal(trackId);
+			}, 250);
+		}
+	});
 });
 // Skeleton / Spinner Loader helper
 function getSkeletonHtml(count = 4, withThumb = true) {
@@ -2670,8 +2684,8 @@ async function openOrderDetails(orderId) {
 		const dpName = dp.name || '';
 		const dpPhone = dp.mobile || dp.phone || '';
 		const dpText = dpName ? `${dpName}${dpPhone ? ' | ' + dpPhone : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
-		// Tracking link
-		const trackUrl = `https://www.swiggy.com/track-order/${orderId}`;
+		// Tracking link — deep link into our Telegram bot
+		const trackUrl = `https://t.me/Toingpro_bot?start=track_${orderId}`;
 		// Extract full Bill Details
 		const charges = ord.charges || {};
 		const itemTotal = Number(ord.item_total || items.reduce((s, it) => s + Number(it.sub_total || it.item_total || (it.cost ? it.cost / 100 : 0)), 0) || total);
@@ -2716,7 +2730,7 @@ async function openOrderDetails(orderId) {
         <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;">
           <span style="color:var(--text-muted); font-weight:600;">Tracking</span>
           <span style="display:flex; align-items:center; gap:6px;">
-            <a href="${trackUrl}" target="_blank" rel="noopener" style="background:rgba(249,115,22,0.12); color:#ea580c; padding:4px 11px; border-radius:999px; font-weight:700; font-size:12px; text-decoration:none;">🎯 Track order</a>
+            <button type="button" onclick="openLiveTrackModal('${orderId}')" style="border:none; cursor:pointer; background:rgba(249,115,22,0.12); color:#ea580c; padding:4px 11px; border-radius:999px; font-weight:700; font-size:12px;">🎯 Track order</button>
             <button type="button" onclick="copyPlainText('${trackUrl}', 'Tracking link copied!')" style="border:1px solid var(--border-color); background:var(--input-bg); border-radius:6px; padding:2px 6px; cursor:pointer; font-size:11px;">📋</button>
           </span>
         </div>
@@ -2913,8 +2927,81 @@ async function handleScratchCard() {
 	}
 }
 
+async function openLiveTrackModal(orderId) {
+	const titleEl = document.getElementById('orderModalTitle');
+	const bodyEl = document.getElementById('orderModalBody');
+	if (!bodyEl) return;
+	if (titleEl) titleEl.textContent = `🛵 Live Tracking #${orderId}`;
+	bodyEl.innerHTML = getSkeletonHtml(2, false);
+	openModal('modalOrderDetail');
+	try {
+		const res = await fetch(`${API_BASE}/orders/${orderId}`, {
+			headers: getAuthHeaders()
+		});
+		const data = await res.json();
+		const ord = data.liveOrder || data.order || {};
+		const track = data.trackData?.data || data.trackData || {};
+		const rawStatus = String(track.order_status || ord.order_status || 'PREPARING').toUpperCase();
+		const cleanStatus = rawStatus.replace(/_/g, ' ');
+		const restName = ord.restaurant_name || 'Toing Order';
+		const statusMsg = track.message || track.statusMessage || data.trackData?.statusMessage || '';
+		const dp = ord.delivery_boy || track.delivery_boy || track.de_details || {};
+		const dpName = dp.name || '';
+		const dpPhone = dp.mobile || dp.phone || '';
+		const isCancelled = /CANCEL|FAIL|REJECT/.test(rawStatus);
+		const stepIdx = /DELIVERED/.test(rawStatus) ? 3
+			: /PICKED|OUT_FOR|ARRIVING|DISPATCH/.test(rawStatus) ? 2
+			: /PREPAR|COOK|ACCEPT|CONFIRMED|RECEIVED/.test(rawStatus) ? 1 : 0;
+
+		const steps = [
+			{ label: 'Order Placed', icon: '🧾' },
+			{ label: 'Preparing Food', icon: '🍳' },
+			{ label: 'Out for Delivery', icon: '🛵' },
+			{ label: 'Delivered', icon: '✅' }
+		];
+
+		const stepperHtml = isCancelled
+			? `<div style="background:rgba(239,68,68,0.12); color:#dc2626; padding:12px; border-radius:12px; font-weight:700; text-align:center; margin:12px 0;">❌ Order ${cleanStatus}</div>`
+			: `<div style="display:flex; flex-direction:column; gap:10px; margin:14px 0; padding:12px; background:var(--input-bg); border-radius:12px; border:1px solid var(--border-color);">
+				${steps.map((st, idx) => {
+					const done = idx <= stepIdx;
+					const active = idx === stepIdx;
+					return `<div style="display:flex; align-items:center; gap:10px; opacity:${done ? '1' : '0.45'};">
+						<span style="width:26px; height:26px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:13px; background:${done ? '#10b981' : 'var(--border-color)'}; color:${done ? '#fff' : 'var(--text-muted)'}; font-weight:800;">${done ? '✓' : (idx + 1)}</span>
+						<span style="font-weight:${active ? '800' : '600'}; color:${active ? 'var(--primary)' : 'var(--text-main)'}; font-size:13px;">${st.icon} ${st.label}</span>
+						${active ? '<span style="margin-left:auto; font-size:10px; background:rgba(16,185,129,0.14); color:#047857; padding:2px 8px; border-radius:999px; font-weight:800;">LIVE</span>' : ''}
+					</div>`;
+				}).join('')}
+			</div>`;
+
+		bodyEl.innerHTML = `
+			<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+				<div>
+					<div style="font-weight:800; font-size:15px;">${restName}</div>
+					<div style="font-size:11.5px; color:var(--text-muted);">Order #${orderId}</div>
+				</div>
+				<span style="background:rgba(79,70,229,0.12); color:#4f46e5; padding:4px 10px; border-radius:999px; font-weight:800; font-size:11px;">${cleanStatus}</span>
+			</div>
+			${stepperHtml}
+			${statusMsg ? `<div style="background:rgba(99,102,241,0.08); color:var(--primary); padding:10px 12px; border-radius:10px; font-size:12px; font-weight:600; margin-bottom:10px;">💬 ${statusMsg}</div>` : ''}
+			<div style="padding:10px 12px; border-radius:10px; background:var(--input-bg); border:1px solid var(--border-color); font-size:12.5px; margin-bottom:12px;">
+				<div style="color:var(--text-muted); font-size:11px; font-weight:700; margin-bottom:4px;">DELIVERY PARTNER</div>
+				<div style="display:flex; justify-content:space-between; align-items:center; font-weight:700;">
+					<span>🚴 ${dpName || (stepIdx === 3 ? 'Delivered' : 'Assigning partner...')}</span>
+					${dpPhone ? `<a href="tel:${dpPhone}" style="color:#10b981; text-decoration:none; font-weight:800;">📞 ${dpPhone}</a>` : ''}
+				</div>
+			</div>
+			<button type="button" class="btn-primary" style="width:100%;" onclick="openLiveTrackModal('${orderId}')">🔄 Refresh Live Status</button>
+		`;
+	} catch (e) {
+		bodyEl.innerHTML = `<div style="color:#dc2626; font-weight:700; padding:12px 0;">❌ Live tracking load nahi ho paya: ${e.message}</div>
+		<button type="button" class="btn-primary" style="width:100%;" onclick="openLiveTrackModal('${orderId}')">🔄 Retry</button>`;
+	}
+}
 function openStoreBot() {
-	const url = 'https://t.me/CodeAddabot';
+	openBotTracking('https://t.me/CodeAddabot');
+}
+function openBotTracking(url) {
 	const tg = window.Telegram?.WebApp;
 	if (tg && typeof tg.openTelegramLink === 'function') {
 		try {
