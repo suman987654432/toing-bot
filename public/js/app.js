@@ -55,7 +55,7 @@ const state = {
 		cookingRequest: '',
 		couponCode: '',
 		discount: 0,
-		fcClaimed: true,
+		fcClaimed: false,
 		fcManuallyToggled: false,
 		paymentMethod: 'UPIIntent',
 		liveBill: null,
@@ -1697,7 +1697,8 @@ function renderCartBill(rawItemTotal) {
 	if (live) {
 		state.cart.discount = couponDiscount;
 	}
-	const fcDiscount = live ? Number(live.referralCash || 0) : (state.cart.fcClaimed ? 50 : 0);
+	const fcDiscount = live ? Number(live.referralCash || 0) : 0;
+	state.cart.fcClaimed = fcDiscount > 0;
 	const toPay = (live && live.orderTotal > 0) ? Math.round(Number(live.orderTotal)) : Math.max(0, Math.round(rawItemTotal + (deliveryFee || 0) + (taxes || 0) - couponDiscount - fcDiscount));
 	const origTotalEl = document.getElementById('billOrigItemTotal');
 	if (origTotalEl) {
@@ -1863,7 +1864,6 @@ function toggleCouponSection() {
 		chevron.textContent = isHidden ? '›' : 'ˇ';
 	}
 }
-
 async function claimFoodCoinDiscount() {
 	if (!state.activeAccount) {
 		showToast('Please login to an account first', true);
@@ -1873,12 +1873,15 @@ async function claimFoodCoinDiscount() {
 	try {
 		await fetch('/api/tools/claim-refer', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ referralCode: '5G9P5Q' }),
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				referralCode: '5G9P5Q'
+			}),
 		});
 	} catch (e) {}
 	state.cart.fcManuallyToggled = true;
-	state.cart.fcClaimed = true;
 	cartBillSyncKey = '';
 	updateCartView();
 }
@@ -2304,6 +2307,7 @@ async function initBharatPeRecharge() {
 		setButtonLoading(btn, false);
 	}
 }
+
 function copyBharatPeUpiId() {
 	const upiId = state.activeBharatPeUpiId || '';
 	if (!upiId) return;
@@ -2313,7 +2317,6 @@ function copyBharatPeUpiId() {
 		showToast('Copy failed', true);
 	});
 }
-
 async function verifyBharatPeRecharge(isAuto = false) {
 	const utr = (document.getElementById('inputManualUtr')?.value || '').trim();
 	if (!isAuto) setButtonLoading('btnVerifyBharatPe', true, 'Verifying...');
