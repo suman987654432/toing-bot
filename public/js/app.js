@@ -204,7 +204,13 @@ function switchTab(tabName) {
 	}
 	// Trigger contextual data only if not already loaded (instant tab switching)
 	if (tabName === 'address' && state.addresses.length === 0) loadAddresses();
-	if (tabName === 'search' && (!state.lastRestaurants || state.lastRestaurants.length === 0)) performSearch();
+	if (tabName === 'search') {
+		if (!state.selectedAddress || !state.selectedAddress.lat || !state.selectedAddress.lng) {
+			openLocationPickerModal();
+		} else if (!state.lastRestaurants || state.lastRestaurants.length === 0) {
+			performSearch();
+		}
+	}
 	if (tabName === 'orders' && !state.ordersCache) fetchOrders();
 	if (tabName === 'cart') updateCartView();
 	if (tabName === 'orders') fetchOrders();
@@ -540,7 +546,7 @@ async function deleteAccount(id) {
 		const data = await res.json();
 		if (data.success) {
 			showToast('Account removed');
-			loadAccounts();
+			loadAccounts().then(() => loadAddresses());
 		}
 	} catch (e) {
 		showToast('Failed to delete account', true);
@@ -824,6 +830,51 @@ function fetchCurrentGpsLocation() {
 	tryBrowserGeo();
 }
 
+function renderManualSuggestRows(list, isTopBox = false) {
+	return list.map((s) => {
+		const title = s.title || s.area || 'Location';
+		const sub = s.display || s.area || '';
+		return `
+			<div onclick="pickManualAreaSuggestion(${s.lat}, ${s.lng}, '${encodeURIComponent(s.area || title)}', '${encodeURIComponent(s.city || '')}', '${encodeURIComponent(title)}')" style="display:flex; align-items:flex-start; gap:10px; padding:${isTopBox ? '11px 13px' : '9px 12px'}; border-bottom:1px solid var(--border-color); cursor:pointer;">
+				<span style="color:#7c3aed; font-size:15px; margin-top:2px; flex-shrink:0;">📍</span>
+				<div style="flex:1; min-width:0;">
+					<div style="font-weight:700; font-size:13px; color:var(--text-main); line-height:1.3;">${title}</div>
+					${sub ? `<div style="color:var(--text-muted); font-size:11.5px; line-height:1.35; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${sub}</div>` : ''}
+				</div>
+			</div>
+		`;
+	}).join('');
+}
+
+let topManualSuggestTimer = null;
+function onManualTopSearchInput(val) {
+	state.manualLat = null;
+	state.manualLng = null;
+	const box = document.getElementById('manualTopSuggestions');
+	if (!box) return;
+	if (topManualSuggestTimer) clearTimeout(topManualSuggestTimer);
+	const q = String(val || '').trim();
+	if (q.length < 3) {
+		box.innerHTML = '';
+		box.classList.add('hidden');
+		return;
+	}
+	topManualSuggestTimer = setTimeout(async () => {
+		try {
+			const res = await fetch(`/api/addresses/suggest?q=${encodeURIComponent(q)}`);
+			const data = await res.json();
+			const list = data.suggestions || [];
+			if (list.length === 0) {
+				box.innerHTML = '<div style="padding:11px 13px; font-size:12px; color:var(--text-muted);">No matching locations found</div>';
+				box.classList.remove('hidden');
+				return;
+			}
+			box.innerHTML = renderManualSuggestRows(list, true);
+			box.classList.remove('hidden');
+		} catch (e) {}
+	}, 280);
+}
+
 function onManualAreaInput(val) {
 	state.manualLat = null;
 	state.manualLng = null;
@@ -844,26 +895,25 @@ function onManualAreaInput(val) {
 				box.classList.add('hidden');
 				return;
 			}
-			box.innerHTML = list.map((s) => `
-				<div onclick="pickManualAreaSuggestion(${s.lat}, ${s.lng}, '${encodeURIComponent(s.area)}', '${encodeURIComponent(s.city)}')" style="padding:9px 12px; border-bottom:1px solid var(--border-color); font-size:12px; cursor:pointer;">
-					<div style="font-weight:700;">📍 ${s.area}</div>
-					<div style="color:var(--text-muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.display}</div>
-				</div>
-			`).join('');
+			box.innerHTML = renderManualSuggestRows(list, false);
 			box.classList.remove('hidden');
 		} catch (e) {}
 	}, 300);
 }
 
-function pickManualAreaSuggestion(lat, lng, encArea, encCity) {
+function pickManualAreaSuggestion(lat, lng, encArea, encCity, encTitle) {
 	const area = decodeURIComponent(encArea || '');
 	const city = decodeURIComponent(encCity || '');
+	const title = decodeURIComponent(encTitle || '') || area;
 	state.manualLat = Number(lat);
 	state.manualLng = Number(lng);
 	if (area) document.getElementById('manualLine2').value = area;
 	if (city) document.getElementById('manualCity').value = city;
+	const topInput = document.getElementById('manualTopSearchInput');
+	if (topInput && title) topInput.value = title;
+	document.getElementById('manualTopSuggestions')?.classList.add('hidden');
 	document.getElementById('manualAreaSuggestions')?.classList.add('hidden');
-	setManualGpsStatus(`✅ Location locked: ${area || city} (${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)})`);
+	setManualGpsStatus(`✅ Location locked: ${title || area || city} (${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)})`);
 }
 
 function selectManualTag(tag) {
@@ -882,9 +932,16 @@ function openAddManualModal() {
 	state.manualLng = null;
 	setManualGpsStatus('');
 	document.getElementById('manualAreaSuggestions')?.classList.add('hidden');
+	const topIn = document.getElementById('manualTopSearchInput');
+	const topBox = document.getElementById('manualTopSuggestions');
+	if (topIn) topIn.value = '';
+	if (topBox) {
+		topBox.innerHTML = '';
+		topBox.classList.add('hidden');
+	}
 	const titleEl = document.getElementById('manualModalTitle');
 	const btnEl = document.getElementById('btnSaveManualAddr');
-	if (titleEl) titleEl.textContent = 'Add Address Manually';
+	if (titleEl) titleEl.textContent = 'Add Delivery Address';
 	if (btnEl) btnEl.textContent = 'Save Address';
 	document.getElementById('manualName').value = '';
 	document.getElementById('manualPhone').value = '';
@@ -905,6 +962,13 @@ function openEditAddressModal(addressId) {
 	state.manualLng = null;
 	setManualGpsStatus('');
 	document.getElementById('manualAreaSuggestions')?.classList.add('hidden');
+	const topIn = document.getElementById('manualTopSearchInput');
+	const topBox = document.getElementById('manualTopSuggestions');
+	if (topIn) topIn.value = '';
+	if (topBox) {
+		topBox.innerHTML = '';
+		topBox.classList.add('hidden');
+	}
 	const titleEl = document.getElementById('manualModalTitle');
 	const btnEl = document.getElementById('btnSaveManualAddr');
 	if (titleEl) titleEl.textContent = 'Edit Address';
@@ -1028,8 +1092,8 @@ async function performSearch() {
         <div style="font-size: 28px; margin-bottom: 8px;">📍</div>
         <div style="font-weight: 700; color: var(--text-main); margin-bottom: 6px;">No Delivery Address Selected</div>
         <div style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px;">Please login and select a delivery address to see nearby restaurants.</div>
-        <button class="btn-primary" style="width:auto; padding: 10px 20px; font-size: 13px;" onclick="switchTab('${state.activeAccount ? 'address' : 'accounts'}')">
-          ${state.activeAccount ? 'Select Address' : 'Login / Add Account'}
+        <button class="btn-primary" style="width:auto; padding: 10px 20px; font-size: 13px;" onclick="${state.activeAccount ? 'openLocationPickerModal()' : "switchTab('accounts')"}">
+          ${state.activeAccount ? 'Select Location' : 'Login / Add Account'}
         </button>
       </div>
     `;
@@ -3049,4 +3113,198 @@ function openBotTracking(url) {
 		} catch (e) {}
 	}
 	window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+// ==========================================
+// SELECT YOUR LOCATION BOTTOM SHEET (SEARCH TAB)
+// ==========================================
+let _locPickerSearchTimer = null;
+let _locPickerSuggestions = [];
+
+function openLocationPickerModal() {
+	const modal = document.getElementById('modalLocationPicker');
+	if (!modal) return;
+	const input = document.getElementById('locPickerSearchInput');
+	const suggestList = document.getElementById('locPickerSuggestList');
+	const gpsSub = document.getElementById('locPickerGpsSub');
+	if (input) input.value = '';
+	if (suggestList) {
+		suggestList.innerHTML = '';
+		suggestList.classList.add('hidden');
+	}
+	if (gpsSub) gpsSub.textContent = 'Using GPS';
+	_locPickerSuggestions = [];
+	modal.classList.remove('hidden');
+
+	if ((!state.addresses || state.addresses.length === 0) && state.activeAccount && typeof loadAddresses === 'function') {
+		const listEl = document.getElementById('locPickerSavedList');
+		if (listEl) listEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:10px 0;">Loading saved addresses...</div>';
+		loadAddresses().then(() => renderLocPickerSavedAddresses()).catch(() => renderLocPickerSavedAddresses());
+	} else {
+		renderLocPickerSavedAddresses();
+	}
+}
+
+function closeLocationPickerModal() {
+	const modal = document.getElementById('modalLocationPicker');
+	if (modal) modal.classList.add('hidden');
+}
+
+function renderLocPickerSavedAddresses() {
+	const listEl = document.getElementById('locPickerSavedList');
+	if (!listEl) return;
+	const addrs = Array.isArray(state.addresses) ? state.addresses : [];
+	if (addrs.length === 0) {
+		listEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:12px; border:1px dashed var(--border-color); border-radius:10px; text-align:center;">No saved addresses found. Use GPS or search above.</div>';
+		return;
+	}
+
+	listEl.innerHTML = addrs.map(addr => {
+		const id = String(addr.id || addr.address_id || '');
+		const isSelected = state.selectedAddress && String(state.selectedAddress.id || state.selectedAddress.address_id) === id;
+		const tagRaw = String(addr.annotation || addr.tag || addr.address_tag || 'OTHER').trim();
+		const tagUpper = tagRaw.toUpperCase();
+		const isAccountAddr = !!(addr.is_account_address || addr.source === 'account' || addr.accountAddress);
+		const name = addr.name || addr.contact_name || addr.annotation || addr.area || 'Address';
+		const phone = addr.phone || addr.mobile || addr.contact_phone || '';
+		const fullAddr = typeof formatFullAddress === 'function'
+			? formatFullAddress(addr)
+			: [addr.flat, addr.building, addr.landmark, addr.area, addr.city, addr.pincode].filter(Boolean).join(', ');
+
+		return `
+			<div onclick="selectLocationPickerAddress('${id.replace(/'/g, "\\'")}')" style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid ${isSelected ? 'var(--primary)' : 'var(--border-color)'}; border-radius:12px; background:${isSelected ? 'rgba(139,92,246,0.06)' : 'var(--bg-card)'}; cursor:pointer;">
+				<span style="color:var(--primary); font-size:15px; margin-top:2px;">📍</span>
+				<div style="flex:1; min-width:0;">
+					<div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:4px;">
+						<span style="font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; background:var(--bg-muted, rgba(148,163,184,0.18)); color:var(--text-main); letter-spacing:0.3px;">${tagUpper}</span>
+						${isAccountAddr ? '<span style="font-size:10px; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(16,185,129,0.14); color:#059669; letter-spacing:0.3px;">ACCOUNT ADDRESS</span>' : ''}
+					</div>
+					<div style="font-size:13px; font-weight:700; color:var(--text-main); margin-bottom:2px;">
+						${name}${phone ? ` <span style="font-weight:500; color:var(--text-muted);">| ${phone}</span>` : ''}
+					</div>
+					<div style="font-size:11.5px; color:var(--text-muted); line-height:1.35; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">
+						${fullAddr || 'Location coordinates saved'}
+					</div>
+				</div>
+			</div>
+		`;
+	}).join('');
+}
+
+async function selectLocationPickerAddress(addressId) {
+	closeLocationPickerModal();
+	if (typeof selectDeliveryAddress === 'function') {
+		await selectDeliveryAddress(addressId);
+	}
+	if (state.activeTab === 'search' && typeof performSearch === 'function') {
+		performSearch();
+	}
+}
+
+function onLocPickerSearchInput() {
+	const input = document.getElementById('locPickerSearchInput');
+	const list = document.getElementById('locPickerSuggestList');
+	if (!input || !list) return;
+	const q = input.value.trim();
+
+	if (_locPickerSearchTimer) clearTimeout(_locPickerSearchTimer);
+	if (q.length < 2) {
+		_locPickerSuggestions = [];
+		list.innerHTML = '';
+		list.classList.add('hidden');
+		return;
+	}
+
+	_locPickerSearchTimer = setTimeout(async () => {
+		try {
+			const res = await fetch(`/api/addresses/suggest?q=${encodeURIComponent(q)}`);
+			const data = await res.json();
+			const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+			_locPickerSuggestions = suggestions;
+			if (!suggestions.length) {
+				list.innerHTML = '<div style="padding:10px 12px; font-size:12px; color:var(--text-muted);">No matching areas found</div>';
+				list.classList.remove('hidden');
+				return;
+			}
+			list.innerHTML = suggestions.map((s, idx) => `
+				<div onclick="pickLocPickerSuggestion(${idx})" style="padding:9px 12px; border-bottom:1px solid var(--border-color); cursor:pointer; font-size:12.5px;">
+					<div style="font-weight:700; color:var(--text-main);">📍 ${s.area || s.display || 'Area'}</div>
+					${s.display && s.display !== s.area ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${s.display}</div>` : ''}
+				</div>
+			`).join('');
+			list.classList.remove('hidden');
+		} catch (e) {
+			list.innerHTML = '<div style="padding:10px 12px; font-size:12px; color:#dc2626;">Could not fetch suggestions</div>';
+			list.classList.remove('hidden');
+		}
+	}, 280);
+}
+
+function pickLocPickerSuggestion(idx) {
+	const item = _locPickerSuggestions[idx];
+	if (!item || !item.lat || !item.lng) return;
+	state.selectedAddress = {
+		id: 'search_custom_' + Date.now(),
+		annotation: item.area || 'Selected Area',
+		area: item.area || item.display || '',
+		city: item.city || '',
+		lat: Number(item.lat),
+		lng: Number(item.lng),
+		name: item.area || 'Selected Location',
+		flat: item.display || item.area || ''
+	};
+	if (typeof updateDeliveryBanner === 'function') updateDeliveryBanner();
+	closeLocationPickerModal();
+	if (state.activeTab === 'search' && typeof performSearch === 'function') {
+		performSearch();
+	}
+}
+
+function pickCurrentLocationForSearch() {
+	const gpsSub = document.getElementById('locPickerGpsSub');
+	if (!navigator.geolocation) {
+		if (gpsSub) gpsSub.textContent = 'GPS not supported on this device';
+		return;
+	}
+	if (gpsSub) gpsSub.textContent = 'Fetching current GPS location...';
+
+	navigator.geolocation.getCurrentPosition(async (pos) => {
+		const lat = pos.coords.latitude;
+		const lng = pos.coords.longitude;
+		let area = 'Current Location';
+		let city = '';
+		let display = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+		try {
+			const res = await fetch(`/api/addresses/reverse-geocode?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);
+			const data = await res.json();
+			if (data && data.success) {
+				area = data.area || area;
+				city = data.city || '';
+				display = data.display || data.area || display;
+			}
+		} catch (e) {}
+
+		state.selectedAddress = {
+			id: 'gps_current_' + Date.now(),
+			annotation: 'Current Location',
+			area,
+			city,
+			lat,
+			lng,
+			name: area,
+			flat: display
+		};
+		if (typeof updateDeliveryBanner === 'function') updateDeliveryBanner();
+		closeLocationPickerModal();
+		if (state.activeTab === 'search' && typeof performSearch === 'function') {
+			performSearch();
+		}
+	}, (err) => {
+		if (gpsSub) gpsSub.textContent = err && err.message ? `GPS error: ${err.message}` : 'Location permission denied';
+	}, {
+		enableHighAccuracy: true,
+		timeout: 12000,
+		maximumAge: 0
+	});
 }

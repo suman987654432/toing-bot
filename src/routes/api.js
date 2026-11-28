@@ -12,6 +12,7 @@ const {
 	isAdminUser
 } = require('../models/Settings');
 const SwiggyService = require('../services/swiggyService');
+router.use((req, res, next) => SwiggyService.runWithSession({}, next));
 const BharatPeService = require('../services/bharatpeService');
 const pendingRecharges = new Map();
 const notifiedOrderIds = new Set();
@@ -553,15 +554,13 @@ router.get('/addresses/suggest', async (req, res) => {
 	});
 	try {
 		const { active, tid, token } = await getActiveCreds(getTgUserId(req));
-		if (tid) {
-			const sel = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
-			const swRes = await SwiggyService.placeAutocomplete(q, sel?.lat || 25.6074, sel?.lng || 85.1587, tid, token);
-			if (swRes?.success && swRes.suggestions?.length > 0) {
-				return res.json({
-					success: true,
-					suggestions: swRes.suggestions,
-				});
-			}
+		const sel = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
+		const swRes = await SwiggyService.placeAutocomplete(q, sel?.lat || null, sel?.lng || null, tid || '', token || '');
+		if (swRes?.success && swRes.suggestions?.length > 0) {
+			return res.json({
+				success: true,
+				suggestions: swRes.suggestions,
+			});
 		}
 	} catch (e) {}
 	try {
@@ -660,12 +659,14 @@ router.get('/addresses/reverse-geocode', async (req, res) => {
 });
 router.get('/addresses', async (req, res) => {
 	try {
-		const active = await AccountRepo.getActive(getTgUserId(req));
+		const tgUserId = getTgUserId(req);
+		const userSaved = await AccountRepo.getUserAddresses(tgUserId);
+		const active = await AccountRepo.getActive(tgUserId);
 		if (!active) {
 			return res.json({
 				success: true,
-				addresses: [],
-				selectedAddressId: ''
+				addresses: userSaved.addresses || [],
+				selectedAddressId: userSaved.selectedAddressId || userSaved.addresses?.[0]?.id || ''
 			});
 		}
 		let addresses = active.addresses || [];
@@ -697,10 +698,23 @@ router.get('/addresses', async (req, res) => {
 				}
 			} catch (err) {}
 		}
+		// Merge user-level saved addresses so addresses survive account logout/switch (subject to 2hr cleanup)
+		const merged = AccountRepo.mergeAddressLists(addresses, userSaved.addresses || []);
+		if (merged.length !== addresses.length) {
+			addresses = merged;
+			active.addresses = merged;
+			if (!active.selectedAddressId) {
+				active.selectedAddressId = userSaved.selectedAddressId || merged[0]?.id || '';
+			}
+			await AccountRepo.updateAddresses(active._id, merged).catch(() => {});
+			if (active.selectedAddressId) {
+				await AccountRepo.setSelectedAddress(active._id, active.selectedAddressId).catch(() => {});
+			}
+		}
 		res.json({
 			success: true,
 			addresses,
-			selectedAddressId: active.selectedAddressId || addresses[0]?.id || '',
+			selectedAddressId: active.selectedAddressId || userSaved.selectedAddressId || addresses[0]?.id || '',
 		});
 	} catch (err) {
 		res.status(500).json({
@@ -715,14 +729,12 @@ router.post('/addresses/select', async (req, res) => {
 		const {
 			addressId
 		} = req.body;
-		const active = await AccountRepo.getActive(getTgUserId(req));
-		if (!active) {
-			return res.status(400).json({
-				success: false,
-				error: 'No active account'
-			});
+		const tgUserId = getTgUserId(req);
+		await AccountRepo.setUserSelectedAddress(tgUserId, addressId);
+		const active = await AccountRepo.getActive(tgUserId);
+		if (active) {
+			await AccountRepo.setSelectedAddress(active._id, addressId);
 		}
-		await AccountRepo.setSelectedAddress(active._id, addressId);
 		res.json({
 			success: true,
 			message: 'Delivery address selected',
@@ -932,6 +944,7 @@ router.post('/addresses/add-link', async (req, res) => {
 		};
 		await AccountRepo.addAddress(active._id, newAddress);
 		await AccountRepo.setSelectedAddress(active._id, newAddress.id);
+		await AccountRepo.syncUserAddress(getTgUserId(req), newAddress, true);
 		res.json({
 			success: true,
 			message: 'Address added successfully!',
@@ -1013,6 +1026,7 @@ router.post('/addresses/add-manual', async (req, res) => {
 		};
 		await AccountRepo.addAddress(active._id, newAddress);
 		await AccountRepo.setSelectedAddress(active._id, newAddress.id);
+		await AccountRepo.syncUserAddress(getTgUserId(req), newAddress, true);
 		res.json({
 			success: true,
 			message: 'Address created successfully!',
@@ -1108,6 +1122,7 @@ router.put('/addresses/:id', async (req, res) => {
 			await AccountRepo.addAddress(active._id, updatedFields);
 			await AccountRepo.setSelectedAddress(active._id, updatedFields.id);
 		}
+		await AccountRepo.updateUserAddress(getTgUserId(req), req.params.id, updatedFields);
 		res.json({
 			success: true,
 			message: 'Address updated successfully!',
@@ -1126,7 +1141,9 @@ router.put('/addresses/:id', async (req, res) => {
 // Delete Address
 router.delete('/addresses/:id', async (req, res) => {
 	try {
-		const active = await AccountRepo.getActive(getTgUserId(req));
+		const tgUserId = getTgUserId(req);
+		await AccountRepo.deleteUserAddress(tgUserId, req.params.id);
+		const active = await AccountRepo.getActive(tgUserId);
 		if (active) {
 			await AccountRepo.deleteAddress(active._id, req.params.id);
 			if (active.tid && active.token) {
@@ -1371,6 +1388,16 @@ router.post('/cart/update', async (req, res) => {
 		let autoAppliedCoupon = null;
 		let bhimStatus = '';
 		let bhimReason = '';
+		const extractReferralCash = (cartData) => {
+			if (!cartData) return 0;
+			const row = (cartData.rendering_details || []).find((r) => {
+				const k = String(r.key || '').toLowerCase();
+				const txt = String(r.display_text || '').toLowerCase();
+				return k === 'offercashreward' || k.includes('freecash') || k.includes('free_cash') || k.includes('food_coin') || /free\s*cash|food\s*coin|offer\s*cash/i.test(txt);
+			});
+			const rowVal = row ? Number(String(row.value ?? row.intermediateText ?? 0).replace(/[^\d.-]/g, '')) : 0;
+			return Math.abs(Math.round(rowVal || Number(cartData.swiggy_money || cartData.free_cash_applied || cartData.offer_cash_reward || cartData.trade_discount_reward_amount || 0)));
+		};
 		const itemTotalForBhim = Number(d.cart_subtotal ?? d.item_total ?? (Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0));
 		if (String(d.coupon_applied || '').toUpperCase() === 'BHIMNEW' || String(req.body.couponCode || '').toUpperCase() === 'BHIMNEW') {
 			bhimStatus = 'applied';
@@ -1420,8 +1447,7 @@ router.post('/cart/update', async (req, res) => {
 		const isBhimApplied = bhimStatus === 'applied' || String(d.coupon_applied || '').toUpperCase() === 'BHIMNEW';
 		const bhimExtraDeduct = (isBhimApplied && rawCouponDiscount === 0 && itemSubtotal >= 99) ? 50 : 0;
 		const couponDiscount = rawCouponDiscount > 0 ? rawCouponDiscount : bhimExtraDeduct;
-		const rewardRow = (d.rendering_details || []).find((r) => r.key === 'offerCashReward');
-		const referralCash = rewardRow ? Math.abs(Math.round(Number(rewardRow.value || 0))) : Math.abs(Math.round(Number(d.swiggy_money || 0)));
+		const referralCash = extractReferralCash(d);
 		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount - referralCash));
 		const baseOrderTotal = (isFreeDelivery && rawDeliveryFee > 0) ? calcOrderTotal : Math.max(0, Math.round(Number(d.order_total ?? calcOrderTotal) - bhimExtraDeduct));
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {

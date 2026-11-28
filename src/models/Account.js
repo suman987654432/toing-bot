@@ -82,10 +82,73 @@ if (MongooseAccountModel && MongooseAccountModel.collection) {
   MongooseAccountModel.collection.dropIndex('phone_1').catch(() => {});
 }
 
+// Persistent per-user saved addresses (survives account logout / deletion, subject to 2-hour cleanup)
+const userAddressSchema = new mongoose.Schema(
+  {
+    telegramUserId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      trim: true,
+    },
+    addresses: {
+      type: Array,
+      default: [],
+    },
+    selectedAddressId: {
+      type: String,
+      default: '',
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+let MongooseUserAddressModel;
+try {
+  MongooseUserAddressModel = mongoose.model('UserAddress', userAddressSchema);
+} catch (e) {
+  MongooseUserAddressModel = mongoose.models.UserAddress;
+}
+
 // In-memory cache only if MongoDB is still connecting (zero disk files)
 const memAccounts = new Map();
+const memUserAddresses = new Map();
 
 const normTgId = (tgUserId) => String(tgUserId || 'default').trim() || 'default';
+
+const addrDedupKey = (a) => {
+  if (!a) return '';
+  if (a.id) return `id:${String(a.id)}`;
+  const lat = a.lat ? Number(a.lat).toFixed(4) : '';
+  const lng = a.lng ? Number(a.lng).toFixed(4) : '';
+  const line = String(a.address_line1 || a.address || '').trim().toLowerCase();
+  return `loc:${lat},${lng},${line}`;
+};
+
+const mergeAddressLists = (primary = [], secondary = []) => {
+  const out = [];
+  const seenIds = new Set();
+  const seenLocs = new Set();
+  const push = (item) => {
+    if (!item) return;
+    const id = item.id ? String(item.id) : '';
+    const lat = item.lat ? Number(item.lat).toFixed(4) : '';
+    const lng = item.lng ? Number(item.lng).toFixed(4) : '';
+    const line = String(item.address_line1 || item.address || '').trim().toLowerCase();
+    const locKey = (lat && lng && line) ? `${lat},${lng},${line}` : '';
+    if (id && seenIds.has(id)) return;
+    if (locKey && seenLocs.has(locKey)) return;
+    if (id) seenIds.add(id);
+    if (locKey) seenLocs.add(locKey);
+    out.push(item);
+  };
+  (Array.isArray(primary) ? primary : []).forEach(push);
+  (Array.isArray(secondary) ? secondary : []).forEach(push);
+  return out;
+};
 
 const AccountRepo = {
   async getAll(tgUserId = 'default') {
@@ -186,10 +249,16 @@ const AccountRepo = {
   async delete(id, tgUserId = 'default') {
     const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
-      return await MongooseAccountModel.findOneAndDelete({ _id: id, telegramUserId: uid });
+      const existing = await MongooseAccountModel.findOne({ _id: id, telegramUserId: uid });
+      if (existing) {
+        await this.preserveAccountAddresses(existing, uid);
+        return await MongooseAccountModel.findOneAndDelete({ _id: id, telegramUserId: uid });
+      }
+      return null;
     }
     for (const [key, acc] of memAccounts.entries()) {
       if (normTgId(acc.telegramUserId) === uid && (acc._id === id || acc.phone === id)) {
+        await this.preserveAccountAddresses(acc, uid);
         memAccounts.delete(key);
         return true;
       }
@@ -219,10 +288,17 @@ const AccountRepo = {
   async deleteAll(tgUserId = 'default') {
     const uid = normTgId(tgUserId);
     if (mongoose.connection.readyState === 1) {
+      const accs = await MongooseAccountModel.find({ telegramUserId: uid });
+      for (const acc of accs) {
+        await this.preserveAccountAddresses(acc, uid);
+      }
       return await MongooseAccountModel.deleteMany({ telegramUserId: uid });
     }
     for (const [key, acc] of memAccounts.entries()) {
-      if (normTgId(acc.telegramUserId) === uid) memAccounts.delete(key);
+      if (normTgId(acc.telegramUserId) === uid) {
+        await this.preserveAccountAddresses(acc, uid);
+        memAccounts.delete(key);
+      }
     }
     return true;
   },
@@ -320,6 +396,116 @@ const AccountRepo = {
     return null;
   },
 
+  async updateAddresses(accountId, addresses) {
+    const list = Array.isArray(addresses) ? addresses : [];
+    if (mongoose.connection.readyState === 1) {
+      const acc = await MongooseAccountModel.findById(accountId);
+      if (acc) {
+        acc.addresses = list;
+        acc.markModified('addresses');
+        await acc.save();
+        return acc;
+      }
+    }
+    for (const acc of memAccounts.values()) {
+      if (acc._id === accountId || acc.phone === accountId) {
+        acc.addresses = list;
+        return acc;
+      }
+    }
+    return null;
+  },
+
+  async getUserAddresses(tgUserId = 'default') {
+    const uid = normTgId(tgUserId);
+    if (mongoose.connection.readyState === 1) {
+      const doc = await MongooseUserAddressModel.findOne({ telegramUserId: uid });
+      return {
+        addresses: Array.isArray(doc?.addresses) ? doc.addresses : [],
+        selectedAddressId: doc?.selectedAddressId || '',
+      };
+    }
+    const mem = memUserAddresses.get(uid);
+    return {
+      addresses: Array.isArray(mem?.addresses) ? mem.addresses : [],
+      selectedAddressId: mem?.selectedAddressId || '',
+    };
+  },
+
+  async _saveUserAddressState(tgUserId, addresses, selectedAddressId) {
+    const uid = normTgId(tgUserId);
+    const list = Array.isArray(addresses) ? addresses : [];
+    const sel = selectedAddressId || list[0]?.id || '';
+    if (mongoose.connection.readyState === 1) {
+      await MongooseUserAddressModel.findOneAndUpdate(
+        { telegramUserId: uid },
+        { $set: { telegramUserId: uid, addresses: list, selectedAddressId: sel } },
+        { upsert: true, new: true }
+      );
+      return { addresses: list, selectedAddressId: sel };
+    }
+    memUserAddresses.set(uid, { addresses: list, selectedAddressId: sel });
+    return { addresses: list, selectedAddressId: sel };
+  },
+
+  async preserveAccountAddresses(acc, tgUserId = 'default') {
+    if (!acc) return;
+    const uid = normTgId(tgUserId || acc.telegramUserId);
+    const accAddrs = Array.isArray(acc.addresses) ? acc.addresses : [];
+    if (accAddrs.length === 0) return;
+    const cur = await this.getUserAddresses(uid);
+    const merged = mergeAddressLists(cur.addresses, accAddrs);
+    const sel = cur.selectedAddressId || acc.selectedAddressId || merged[0]?.id || '';
+    await this._saveUserAddressState(uid, merged, sel);
+  },
+
+  async syncUserAddress(tgUserId, addrObj, makeSelected = true) {
+    if (!addrObj) return;
+    const uid = normTgId(tgUserId);
+    const withTs = { ...addrObj, addedAt: addrObj.addedAt || Date.now() };
+    const cur = await this.getUserAddresses(uid);
+    const filtered = cur.addresses.filter((a) => String(a.id || a._id) !== String(withTs.id));
+    const merged = mergeAddressLists([withTs], filtered);
+    const sel = makeSelected ? withTs.id : (cur.selectedAddressId || withTs.id);
+    return await this._saveUserAddressState(uid, merged, sel);
+  },
+
+  async updateUserAddress(tgUserId, addressId, updatedFields) {
+    const uid = normTgId(tgUserId);
+    const cur = await this.getUserAddresses(uid);
+    let found = false;
+    const next = cur.addresses.map((addr) => {
+      if (String(addr.id || addr._id) === String(addressId)) {
+        found = true;
+        return { ...addr, ...updatedFields };
+      }
+      return addr;
+    });
+    if (!found) {
+      next.unshift({ ...updatedFields, addedAt: updatedFields.addedAt || Date.now() });
+    }
+    const nextSel = String(cur.selectedAddressId) === String(addressId) && updatedFields.id
+      ? updatedFields.id
+      : cur.selectedAddressId;
+    return await this._saveUserAddressState(uid, next, nextSel);
+  },
+
+  async deleteUserAddress(tgUserId, addressId) {
+    const uid = normTgId(tgUserId);
+    const cur = await this.getUserAddresses(uid);
+    const next = cur.addresses.filter((addr) => String(addr.id || addr._id) !== String(addressId));
+    const nextSel = String(cur.selectedAddressId) === String(addressId) ? (next[0]?.id || '') : cur.selectedAddressId;
+    return await this._saveUserAddressState(uid, next, nextSel);
+  },
+
+  async setUserSelectedAddress(tgUserId, addressId) {
+    const uid = normTgId(tgUserId);
+    const cur = await this.getUserAddresses(uid);
+    return await this._saveUserAddressState(uid, cur.addresses, addressId);
+  },
+
+  mergeAddressLists,
+
   async cleanupExpiredAddresses(maxAgeMs = 2 * 60 * 60 * 1000, onDelete = null) {
     const cutoff = Date.now() - maxAgeMs;
     let removedCount = 0;
@@ -340,6 +526,18 @@ const AccountRepo = {
         }
       }
     };
+    const processUserDoc = async (doc, saveFn) => {
+      const list = Array.isArray(doc.addresses) ? doc.addresses : [];
+      const expired = list.filter((a) => a && a.addedAt && Number(a.addedAt) <= cutoff);
+      if (expired.length === 0) return;
+      const expiredIds = new Set(expired.map((a) => String(a.id || a._id)));
+      doc.addresses = list.filter((a) => !expiredIds.has(String(a.id || a._id)));
+      if (expiredIds.has(String(doc.selectedAddressId))) {
+        doc.selectedAddressId = doc.addresses[0]?.id || '';
+      }
+      removedCount += expired.length;
+      await saveFn();
+    };
     if (mongoose.connection.readyState === 1) {
       const accs = await MongooseAccountModel.find({ 'addresses.0': { $exists: true } });
       for (const acc of accs) {
@@ -348,10 +546,20 @@ const AccountRepo = {
           await acc.save();
         });
       }
+      const userDocs = await MongooseUserAddressModel.find({ 'addresses.0': { $exists: true } });
+      for (const doc of userDocs) {
+        await processUserDoc(doc, async () => {
+          doc.markModified('addresses');
+          await doc.save();
+        });
+      }
       return removedCount;
     }
     for (const acc of memAccounts.values()) {
       await processAcc(acc, async () => {});
+    }
+    for (const doc of memUserAddresses.values()) {
+      await processUserDoc(doc, async () => {});
     }
     return removedCount;
   },

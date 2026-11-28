@@ -125,8 +125,16 @@ const buildPaymentHeaders = (tid = '', token = '', userId = '', extra = {}) => {
 	return h;
 };
 const SwiggyService = {
+	runWithSession(ctx = {}, fn) {
+		return sessionCtx.run({ ...(ctx || {}) }, fn);
+	},
 	setSessionContext(ctx = {}) {
-		sessionCtx.enterWith(ctx || {});
+		const store = sessionCtx.getStore();
+		if (store && typeof store === 'object') {
+			Object.assign(store, ctx || {});
+		} else {
+			sessionCtx.enterWith({ ...(ctx || {}) });
+		}
 	},
 	/* ==========================================================
 	   1. AUTHENTICATION & SESSION
@@ -280,19 +288,20 @@ const SwiggyService = {
 			return { success: false, error: error.message };
 		}
 	},
-	// Autocomplete Area / Colony via Swiggy Maps (Google-backed, from swiggy_location.har)
-	async placeAutocomplete(input, lat = 25.6074, lng = 85.1587, tid = '', token = '') {
-		const url = `https://maps.swiggy.com/place/autocomplete?input=${encodeURIComponent(input)}&location=${encodeURIComponent(`${lat},${lng}`)}&radius=50000`;
+	// Autocomplete Area / Colony via Swiggy Maps (Google-backed, All-India accurate)
+	async placeAutocomplete(input, lat = null, lng = null, tid = '', token = '') {
+		const url = `https://maps.swiggy.com/place/autocomplete?input=${encodeURIComponent(input)}`;
 		try {
+			const extraHeaders = { accept: 'application/json' };
+			if (lat && lng) {
+				extraHeaders.latitude = String(lat);
+				extraHeaders.longitude = String(lng);
+			}
 			const response = await axios.get(url, {
-				headers: buildDiscHeaders(tid, token, {
-					accept: 'application/json',
-					latitude: String(lat),
-					longitude: String(lng),
-				}),
+				headers: buildDiscHeaders(tid, token, extraHeaders),
 				timeout: 6000,
 			});
-			const list = Array.isArray(response.data?.data) ? response.data.data.slice(0, 4) : [];
+			const list = Array.isArray(response.data?.data) ? response.data.data.slice(0, 5) : [];
 			const resolved = await Promise.all(
 				list.map(async (item) => {
 					const desc = item.description || '';
@@ -316,9 +325,10 @@ const SwiggyService = {
 					}
 					if (!sLat || !sLng) return null;
 					return {
+						title: main,
 						area: main,
 						city: sCity || sec.split(',').slice(-3, -2)[0]?.trim() || '',
-						display: desc || `${main}, ${sec}`,
+						display: sec || desc || main,
 						lat: sLat,
 						lng: sLng,
 					};

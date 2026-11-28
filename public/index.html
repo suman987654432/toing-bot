@@ -4112,9 +4112,18 @@ button:disabled {
 
     <div class="modal-overlay hidden" id="modalAddManual">
       <div class="modal-box" style="max-height:92vh; overflow-y:auto;">
-        <div class="modal-header">
-          <h3 id="manualModalTitle">Add Address Manually</h3>
+        <div class="modal-header" style="justify-content:flex-start; gap:10px;">
+          <button type="button" onclick="closeModal('modalAddManual')" style="width:32px; height:32px; border-radius:10px; border:1px solid var(--border-color); background:var(--bg-card); color:var(--text-main); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; cursor:pointer; flex-shrink:0;">←</button>
+          <h3 id="manualModalTitle" style="margin:0; flex:1;">Add Delivery Address</h3>
           <button class="modal-close" onclick="closeModal('modalAddManual')">✕</button>
+        </div>
+
+        <div style="position:relative; margin-bottom:10px;">
+          <div style="position:relative; display:flex; align-items:center;">
+            <span style="position:absolute; left:13px; color:#7c3aed; font-size:15px; pointer-events:none;">🔍</span>
+            <input type="text" id="manualTopSearchInput" placeholder="Search for area, street name..." class="modal-input" style="margin-bottom:0; padding-left:38px; border-radius:14px; font-size:13.5px;" oninput="onManualTopSearchInput(this.value)" autocomplete="off" />
+          </div>
+          <div id="manualTopSuggestions" class="hidden" style="margin-top:6px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:16px; max-height:220px; overflow-y:auto; box-shadow:0 10px 28px rgba(0,0,0,0.12);"></div>
         </div>
 
         <button type="button" id="btnFetchGpsLoc" onclick="fetchCurrentGpsLocation()" style="width:100%; display:flex; align-items:center; justify-content:center; gap:7px; padding:10px 12px; margin-bottom:8px; border-radius:12px; border:1px solid rgba(99,102,241,0.35); background:var(--primary-light); color:var(--primary); font-weight:700; font-size:13px; cursor:pointer;">
@@ -4258,8 +4267,45 @@ button:disabled {
       </div>
     </div>
 
+    <!-- Select Your Location Bottom Sheet (when checking restaurants) -->
+    <div class="customise-bottom-sheet hidden" id="modalLocationPicker" onclick="if(event.target===this) closeLocationPickerModal()">
+      <div class="customise-sheet-box" style="max-height:85vh;">
+        <div class="customise-sheet-header" style="padding-bottom:10px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="color:var(--primary); font-size:17px;">📍</span>
+            <h3 style="margin:0; font-size:16px; font-weight:800;">Select your location</h3>
+          </div>
+          <button class="customise-close-btn" onclick="closeLocationPickerModal()">✕</button>
+        </div>
+        <div style="padding:0 16px 12px; overflow-y:auto;">
+          <div style="position:relative; margin-bottom:10px;">
+            <input type="text" id="locPickerSearchInput" class="modal-input" style="margin-bottom:0; padding-left:34px; font-size:13px;" placeholder="Search for area, street name..." oninput="onLocPickerSearchInput()" autocomplete="off" />
+            <span style="position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:13px;">🔍</span>
+            <div id="locPickerSuggestList" class="hidden" style="margin-top:4px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:10px; max-height:170px; overflow-y:auto; box-shadow:0 8px 20px rgba(0,0,0,0.12);"></div>
+          </div>
+
+          <div id="btnLocPickerGps" onclick="pickCurrentLocationForSearch()" style="display:flex; align-items:center; justify-content:space-between; padding:11px 12px; border:1px solid var(--border-color); border-radius:12px; background:var(--bg-card); cursor:pointer; margin-bottom:14px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="color:var(--primary); font-size:18px;">⌖</span>
+              <div>
+                <div style="font-size:13.5px; font-weight:700; color:var(--text-main);">Use current location</div>
+                <div id="locPickerGpsSub" style="font-size:11.5px; color:var(--text-muted);">Using GPS</div>
+              </div>
+            </div>
+            <span style="color:var(--text-muted); font-size:16px;">›</span>
+          </div>
+
+          <div style="font-size:12px; font-weight:800; color:var(--text-main); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <span>🗺️</span>
+            <span>Saved Addresses</span>
+          </div>
+          <div id="locPickerSavedList" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
-  <script src="/js/app.js?v=20261128_1"></script>
+  <script src="/js/app.js?v=20261128_3"></script>
 </body>
 </html>
