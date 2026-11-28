@@ -80,11 +80,15 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 			|| sessionOrder?.message_id
 			|| liveOrder?.user_flow_info?.flow_data?.message_id
 			|| liveOrder?.message_id
+			|| trackData?.user_flow_info?.flow_data?.message_id
+			|| trackData?.message_id
 			|| ord?.user_flow_info?.flow_data?.message_id
 			|| ord?.message_id
 			|| '';
-		const trackUrl = sessionOrder?.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+		const rawSavedUrl = String(sessionOrder?.ofo_tracking_url || '').trim();
+		const trackUrl = (rawSavedUrl && !/\/track\/?$/i.test(rawSavedUrl))
+			? rawSavedUrl
+			: (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : '');
 		const items = ord.order_items || ord.items || sessionOrder?.items || [];
 		const itemLines = items.map((it) => {
 			const qty = it.quantity || 1;
@@ -128,10 +132,14 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		if (webAppBase.startsWith('https://')) {
 			const sep = webAppBase.includes('?') ? '&' : '?';
 			msgPayload.reply_markup = {
-				inline_keyboard: [[{
-					text: '🎯 Track Order Live',
-					web_app: { url: `${webAppBase}${sep}track=${encodeURIComponent(orderId)}` }
-				}]]
+				inline_keyboard: [
+					[{
+						text: '🎯 Track Order Live',
+						web_app: {
+							url: `${webAppBase}${sep}track=${encodeURIComponent(orderId)}`
+						}
+					}]
+				]
 			};
 		}
 		await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, msgPayload, {
@@ -560,7 +568,11 @@ router.get('/addresses/suggest', async (req, res) => {
 		suggestions: []
 	});
 	try {
-		const { active, tid, token } = await getActiveCreds(getTgUserId(req));
+		const {
+			active,
+			tid,
+			token
+		} = await getActiveCreds(getTgUserId(req));
 		const sel = active?.addresses?.find((a) => a.id === active.selectedAddressId) || active?.addresses?.[0];
 		const swRes = await SwiggyService.placeAutocomplete(q, sel?.lat || null, sel?.lng || null, tid || '', token || '');
 		if (swRes?.success && swRes.suggestions?.length > 0) {
@@ -806,7 +818,6 @@ router.post('/addresses/add-link', async (req, res) => {
 		let resolvedPhone = '';
 		let resolvedTag = 'Home';
 		const resolvedUid = active.userId || extractUserIdFromTid(active.tid);
-
 		// 0. Swiggy Share Address Link (https://www.swiggy.com/ofo/address/<name>/<shareId>)
 		const directOfo = rawInput.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i);
 		if (directOfo) {
@@ -826,7 +837,6 @@ router.post('/addresses/add-link', async (req, res) => {
 				if (a.tag) resolvedTag = a.tag;
 			}
 		}
-
 		// 1. Direct URL query params (?lat=...&lng=...) or Google Maps @lat,lng
 		if (!lat || !lng) {
 			const coordMatch = rawInput.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || rawInput.match(/[?&](?:q|ll|center)=(-?\d+\.\d+),(-?\d+\.\d+)/);
@@ -853,7 +863,13 @@ router.post('/addresses/add-link', async (req, res) => {
 				});
 				const finalUrl = r.request?.res?.responseUrl || rawInput;
 				let decodedFinalUrl = finalUrl;
-				try { decodedFinalUrl = decodeURIComponent(decodeURIComponent(finalUrl)); } catch (e) { try { decodedFinalUrl = decodeURIComponent(finalUrl); } catch (e2) {} }
+				try {
+					decodedFinalUrl = decodeURIComponent(decodeURIComponent(finalUrl));
+				} catch (e) {
+					try {
+						decodedFinalUrl = decodeURIComponent(finalUrl);
+					} catch (e2) {}
+				}
 				const mFinal = decodedFinalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || decodedFinalUrl.match(/[?&]lat=(-?\d+\.\d+).*?[?&]lng=(-?\d+\.\d+)/);
 				if (mFinal) {
 					lat = parseFloat(mFinal[1]);
@@ -861,8 +877,7 @@ router.post('/addresses/add-link', async (req, res) => {
 				}
 				const htmlStr = typeof r.data === 'string' ? r.data : '';
 				const decodedHtml = htmlStr.replace(/%2F/gi, '/').replace(/%3A/gi, ':').replace(/%3F/gi, '?').replace(/%3D/gi, '=').replace(/%26/gi, '&');
-				const ofoMatch = decodedFinalUrl.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i)
-					|| decodedHtml.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s"'<>]+)/i);
+				const ofoMatch = decodedFinalUrl.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s]+)/i) || decodedHtml.match(/swiggy\.com\/ofo\/address\/([^\/\\?&]+)\/([^\/\\?&#\s"'<>]+)/i);
 				let shareErr = '';
 				if (ofoMatch) {
 					if (!resolvedName) resolvedName = decodeURIComponent(ofoMatch[1]).trim();
@@ -887,9 +902,7 @@ router.post('/addresses/add-link', async (req, res) => {
 			if (!lat || !lng) {
 				return res.status(400).json({
 					success: false,
-					error: shareErr
-						? `Swiggy Share Link error${resolvedName ? ` (${resolvedName})` : ''}: ${shareErr}`
-						: `Could not extract coordinates from this link${resolvedName ? ` (Recipient: ${resolvedName})` : ''}. Please paste a Swiggy Share Address Link or Google Maps link!`,
+					error: shareErr ? `Swiggy Share Link error${resolvedName ? ` (${resolvedName})` : ''}: ${shareErr}` : `Could not extract coordinates from this link${resolvedName ? ` (Recipient: ${resolvedName})` : ''}. Please paste a Swiggy Share Address Link or Google Maps link!`,
 				});
 			}
 		}
@@ -913,9 +926,7 @@ router.post('/addresses/add-link', async (req, res) => {
 			}
 		}
 		const userCity = resolvedCity || active.addresses?.[0]?.city || 'Patna';
-		const displayAddress = resolvedFlatNo && resolvedText && !resolvedText.toLowerCase().includes(resolvedFlatNo.toLowerCase())
-			? `${resolvedFlatNo}, ${resolvedText}`
-			: (resolvedText || rawInput);
+		const displayAddress = resolvedFlatNo && resolvedText && !resolvedText.toLowerCase().includes(resolvedFlatNo.toLowerCase()) ? `${resolvedFlatNo}, ${resolvedText}` : (resolvedText || rawInput);
 		const finalLat = lat || active.addresses?.[0]?.lat || 25.6074;
 		const finalLng = lng || active.addresses?.[0]?.lng || 85.1587;
 		let swiggyAddrId = '';
@@ -1187,9 +1198,11 @@ const setBrowseCache = (key, val) => {
 		const oldest = browseCache.keys().next().value;
 		if (oldest) browseCache.delete(oldest);
 	}
-	browseCache.set(key, { ts: Date.now(), val });
+	browseCache.set(key, {
+		ts: Date.now(),
+		val
+	});
 };
-
 router.post('/search', async (req, res) => {
 	try {
 		const {
@@ -1446,9 +1459,7 @@ router.post('/cart/update', async (req, res) => {
 		const reqItemsSubtotal = Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0;
 		const rawSwiggySubtotal = Number(d.cart_subtotal ?? d.item_total ?? reqItemsSubtotal);
 		const referralCash = extractReferralCash(d);
-		const itemSubtotal = (referralCash > 0 && reqItemsSubtotal > rawSwiggySubtotal && Math.abs((reqItemsSubtotal - referralCash) - rawSwiggySubtotal) <= 2)
-			? reqItemsSubtotal
-			: rawSwiggySubtotal;
+		const itemSubtotal = (referralCash > 0 && reqItemsSubtotal > rawSwiggySubtotal && Math.abs((reqItemsSubtotal - referralCash) - rawSwiggySubtotal) <= 2) ? reqItemsSubtotal : rawSwiggySubtotal;
 		// Check if Swiggy genuinely unlocks Free Delivery for this restaurant/location:
 		// 1. Swiggy appliedTradeCampaignHeaders has FREE_DELIVERY
 		// 2. Swiggy fullCouponLessFreeDeliveryApplied is true
@@ -1703,9 +1714,13 @@ router.get('/orders/:id', async (req, res) => {
 			|| foundSessionOrder?.message_id
 			|| liveOrder?.user_flow_info?.flow_data?.message_id
 			|| liveOrder?.message_id
+			|| trackData?.user_flow_info?.flow_data?.message_id
+			|| trackData?.message_id
 			|| '';
-		const ofoTrackingUrl = foundSessionOrder?.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+		const rawSavedTrackUrl = String(foundSessionOrder?.ofo_tracking_url || '').trim();
+		const ofoTrackingUrl = (rawSavedTrackUrl && !/\/track\/?$/i.test(rawSavedTrackUrl))
+			? rawSavedTrackUrl
+			: (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : '');
 		res.json({
 			success: true,
 			order: foundSessionOrder || liveOrder || {
@@ -1906,7 +1921,11 @@ router.post('/orders/place', async (req, res) => {
 				if (ofoAddrRes?.success && ofoAddrRes?.addressId) {
 					addressId = String(ofoAddrRes.addressId);
 					cartPayload.address_id = addressId;
-					const retryUpdate = await SwiggyService.updateCart(cartPayload, tid, token, userId, { lat, lng, addressId });
+					const retryUpdate = await SwiggyService.updateCart(cartPayload, tid, token, userId, {
+						lat,
+						lng,
+						addressId
+					});
 					if (retryUpdate?.success && (!retryUpdate.data?.statusCode || retryUpdate.data.statusCode === 0)) {
 						updateRes = retryUpdate;
 					}
@@ -1959,11 +1978,9 @@ router.post('/orders/place', async (req, res) => {
 			});
 		}
 		const updateOfoToken = updateRes?.data?.data?.user_flow_info?.flow_data?.message_id;
-		const placeOfoToken = placeRes.ofoToken
-			|| placeRes.data?.data?.order_data?.user_flow_info?.flow_data?.message_id
-			|| placeRes.data?.data?.user_flow_info?.flow_data?.message_id;
+		const placeOfoToken = placeRes.ofoToken || placeRes.data?.data?.order_data?.user_flow_info?.flow_data?.message_id || placeRes.data?.data?.user_flow_info?.flow_data?.message_id;
 		const finalOfoToken = placeOfoToken || updateOfoToken || '';
-		const finalTrackUrl = `https://www.swiggy.com/toing/ofo/track/${finalOfoToken}`;
+		const finalTrackUrl = finalOfoToken ? `https://www.swiggy.com/toing/ofo/track/${finalOfoToken}` : '';
 		const newOrder = {
 			order_id: String(placeRes.orderId),
 			paas_id: String(placeRes.paasId || ''),
@@ -2038,8 +2055,7 @@ router.post('/orders/confirm', async (req, res) => {
 			const ord = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(orderId));
 			if (ord) {
 				ord.order_status = 'CONFIRMED';
-				const confirmOfoToken = result.data?.data?.order_data?.user_flow_info?.flow_data?.message_id
-					|| result.data?.data?.user_flow_info?.flow_data?.message_id;
+				const confirmOfoToken = result.data?.data?.order_data?.user_flow_info?.flow_data?.message_id || result.data?.data?.user_flow_info?.flow_data?.message_id;
 				if (confirmOfoToken && !/^\d{14,18}$/.test(String(confirmOfoToken).trim())) {
 					ord.ofo_token = String(confirmOfoToken).trim();
 					ord.ofo_tracking_url = `https://www.swiggy.com/toing/ofo/track/${ord.ofo_token}`;
@@ -2482,9 +2498,7 @@ router.get('/upi-launch', (req, res) => {
 	const queryPart = rawUri.replace(/^upi:\/\/pay\??/i, '');
 	const ua = String(req.headers['user-agent'] || '');
 	const isAndroid = /android/i.test(ua);
-	const makeAppHref = (pkg, iosScheme) => isAndroid
-		? `intent://pay?${queryPart}#Intent;scheme=upi;${pkg ? `package=${pkg};` : ''}end`
-		: `${iosScheme}?${queryPart}`;
+	const makeAppHref = (pkg, iosScheme) => isAndroid ? `intent://pay?${queryPart}#Intent;scheme=upi;${pkg ? `package=${pkg};` : ''}end` : `${iosScheme}?${queryPart}`;
 	const defaultHref = makeAppHref('', 'upi://pay');
 	const gpayUri = makeAppHref('com.google.android.apps.nbu.paisa.user', 'tez://upi/pay');
 	const phonepeUri = makeAppHref('com.phonepe.app', 'phonepe://pay');
