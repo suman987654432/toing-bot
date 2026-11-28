@@ -981,40 +981,62 @@ const initBot = (webAppUrl) => {
 			const admPending = isAdminUser(uid) ? adminPending.get(uid) : null;
 			if (admPending && admPending.action === 'await_broadcast' && msg.message_id) {
 				adminPending.delete(uid);
-				try {
-					const ids = await WalletRepo.getAllUserIds();
-					await tgApi('sendMessage', {
-						chat_id: chatId,
-						text: `⏳ Broadcasting to *${ids.length}* users...`,
-						parse_mode: 'Markdown'
-					});
-					let sent = 0;
-					let failed = 0;
-					for (const targetId of ids) {
-						try {
-							await tgApi('copyMessage', {
-								chat_id: targetId,
-								from_chat_id: chatId,
-								message_id: msg.message_id,
-							});
-							sent++;
-						} catch (e) {
-							failed++;
+				const broadcastMsgId = msg.message_id;
+				(async () => {
+					try {
+						const ids = await WalletRepo.getAllUserIds();
+						await tgApi('sendMessage', {
+							chat_id: chatId,
+							text: `⏳ Broadcasting in background to *${ids.length}* users... (Bot fast rahega!)`,
+							parse_mode: 'Markdown'
+						});
+						let sent = 0;
+						let failed = 0;
+						const BATCH_SIZE = 15;
+						for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+							const batch = ids.slice(i, i + BATCH_SIZE);
+							await Promise.all(batch.map(async (targetId) => {
+								try {
+									await tgApi('copyMessage', {
+										chat_id: targetId,
+										from_chat_id: chatId,
+										message_id: broadcastMsgId,
+									});
+									sent++;
+								} catch (e) {
+									const retryAfter = e?.response?.data?.parameters?.retry_after;
+									if (retryAfter) {
+										await new Promise((r) => setTimeout(r, (Number(retryAfter) + 1) * 1000));
+										try {
+											await tgApi('copyMessage', {
+												chat_id: targetId,
+												from_chat_id: chatId,
+												message_id: broadcastMsgId,
+											});
+											sent++;
+											return;
+										} catch (e2) {}
+									}
+									failed++;
+								}
+							}));
+							if (i + BATCH_SIZE < ids.length) {
+								await new Promise((r) => setTimeout(r, 550));
+							}
 						}
-						await new Promise((r) => setTimeout(r, 45));
+						await tgApi('sendMessage', {
+							chat_id: chatId,
+							text: `✅ *BROADCAST COMPLETE!*\n\n• *Total Users:* ${ids.length}\n• *Sent:* ${sent}\n• *Failed / Blocked:* ${failed}`,
+							parse_mode: 'Markdown',
+							reply_markup: {
+								inline_keyboard: [[{ text: '🔙 Admin Panel', callback_data: 'adm_home', style: 'primary' }]]
+							}
+						});
+					} catch (err) {
+						console.error('[Telegram Bot Broadcast Error]:', err.message);
+						await tgApi('sendMessage', { chat_id: chatId, text: '❌ Broadcast failed: ' + err.message }).catch(() => {});
 					}
-					await tgApi('sendMessage', {
-						chat_id: chatId,
-						text: `✅ *BROADCAST COMPLETE!*\n\n• *Total Users:* ${ids.length}\n• *Sent:* ${sent}\n• *Failed / Blocked:* ${failed}`,
-						parse_mode: 'Markdown',
-						reply_markup: {
-							inline_keyboard: [[{ text: '🔙 Admin Panel', callback_data: 'adm_home', style: 'primary' }]]
-						}
-					});
-				} catch (err) {
-					console.error('[Telegram Bot Broadcast Error]:', err.message);
-					await tgApi('sendMessage', { chat_id: chatId, text: '❌ Broadcast failed: ' + err.message }).catch(() => {});
-				}
+				})();
 				return;
 			}
 
