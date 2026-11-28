@@ -369,6 +369,14 @@ const WalletRepo = {
       debits,
     };
   },
+
+  async getAllUserIds() {
+    if (mongoose.connection.readyState === 1) {
+      const ids = await WalletModel.distinct('telegramUserId');
+      return (ids || []).map((id) => String(id).trim()).filter((id) => /^\d+$/.test(id));
+    }
+    return Array.from(memWallets.keys()).map((id) => String(id).trim()).filter((id) => /^\d+$/.test(id));
+  },
 };
 
 module.exports = { Wallet: WalletModel, WalletTransaction: WalletTxnModel, WalletRepo };

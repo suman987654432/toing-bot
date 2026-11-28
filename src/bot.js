@@ -363,6 +363,11 @@ const initBot = (webAppUrl) => {
 					style: 'primary'
 				}, ],
 				[{
+					text: '📢 Broadcast',
+					callback_data: 'adm_broadcast',
+					style: 'primary'
+				}, ],
+				[{
 					text: '🔄 Refresh',
 					callback_data: 'adm_home',
 					style: 'primary'
@@ -431,8 +436,8 @@ const initBot = (webAppUrl) => {
 			const sign = isAdd ? '+' : '-';
 			const keyboard = [
 				[{
-					text: `${sign}₹10`,
-					callback_data: `adm_w_amt_${mode}_${targetUid}_10`,
+					text: `${sign}₹15`,
+					callback_data: `adm_w_amt_${mode}_${targetUid}_15`,
 					style
 				}, {
 					text: `${sign}₹20`,
@@ -440,8 +445,8 @@ const initBot = (webAppUrl) => {
 					style
 				}, ],
 				[{
-					text: `${sign}₹50`,
-					callback_data: `adm_w_amt_${mode}_${targetUid}_50`,
+					text: `${sign}₹60`,
+					callback_data: `adm_w_amt_${mode}_${targetUid}_60`,
 					style
 				}, {
 					text: `${sign}₹100`,
@@ -925,6 +930,18 @@ const initBot = (webAppUrl) => {
 							minDeposit: Number(minDep)
 						});
 						await renderAdminHome(chatId, messageId);
+					} else if (data === 'adm_broadcast') {
+						const ids = await WalletRepo.getAllUserIds();
+						adminPending.set(uid, {
+							action: 'await_broadcast'
+						});
+						await sendOrEdit(chatId, messageId, `📢 *BROADCAST MESSAGE*\n\nTotal Bot Users: *${ids.length}*\n\nAb woh message bhejein (Text, Photo, Video, ya Forward) jo aap sabhi users ko bhejna chahte hain:`, [
+							[{
+								text: '🔙 Cancel',
+								callback_data: 'adm_home',
+								style: 'danger'
+							}]
+						]);
 					} else if (data === 'adm_search_user') {
 						adminPending.set(uid, {
 							action: 'await_user_search'
@@ -959,7 +976,49 @@ const initBot = (webAppUrl) => {
 			const text = String(msg.text || '').trim();
 			const uid = String(msg.from?.id || ctx.from?.id || '');
 			const chatId = String(msg.chat?.id || uid);
-			if (!text || text.startsWith('/')) return;
+			if (text.startsWith('/')) return;
+
+			const admPending = isAdminUser(uid) ? adminPending.get(uid) : null;
+			if (admPending && admPending.action === 'await_broadcast' && msg.message_id) {
+				adminPending.delete(uid);
+				try {
+					const ids = await WalletRepo.getAllUserIds();
+					await tgApi('sendMessage', {
+						chat_id: chatId,
+						text: `⏳ Broadcasting to *${ids.length}* users...`,
+						parse_mode: 'Markdown'
+					});
+					let sent = 0;
+					let failed = 0;
+					for (const targetId of ids) {
+						try {
+							await tgApi('copyMessage', {
+								chat_id: targetId,
+								from_chat_id: chatId,
+								message_id: msg.message_id,
+							});
+							sent++;
+						} catch (e) {
+							failed++;
+						}
+						await new Promise((r) => setTimeout(r, 45));
+					}
+					await tgApi('sendMessage', {
+						chat_id: chatId,
+						text: `✅ *BROADCAST COMPLETE!*\n\n• *Total Users:* ${ids.length}\n• *Sent:* ${sent}\n• *Failed / Blocked:* ${failed}`,
+						parse_mode: 'Markdown',
+						reply_markup: {
+							inline_keyboard: [[{ text: '🔙 Admin Panel', callback_data: 'adm_home', style: 'primary' }]]
+						}
+					});
+				} catch (err) {
+					console.error('[Telegram Bot Broadcast Error]:', err.message);
+					await tgApi('sendMessage', { chat_id: chatId, text: '❌ Broadcast failed: ' + err.message }).catch(() => {});
+				}
+				return;
+			}
+
+			if (!text) return;
 			const wPending = walletPending.get(uid);
 			if (wPending && wPending.step === 'await_amount') {
 				try {

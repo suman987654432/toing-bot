@@ -228,6 +228,7 @@ const AccountRepo = {
   },
 
   async addAddress(accountId, addressObj) {
+    if (addressObj && !addressObj.addedAt) addressObj.addedAt = Date.now();
     if (mongoose.connection.readyState === 1) {
       const acc = await MongooseAccountModel.findById(accountId);
       if (acc) {
@@ -317,6 +318,42 @@ const AccountRepo = {
       }
     }
     return null;
+  },
+
+  async cleanupExpiredAddresses(maxAgeMs = 2 * 60 * 60 * 1000, onDelete = null) {
+    const cutoff = Date.now() - maxAgeMs;
+    let removedCount = 0;
+    const processAcc = async (acc, saveFn) => {
+      const list = Array.isArray(acc.addresses) ? acc.addresses : [];
+      const expired = list.filter((a) => a && a.addedAt && Number(a.addedAt) <= cutoff);
+      if (expired.length === 0) return;
+      const expiredIds = new Set(expired.map((a) => String(a.id || a._id)));
+      acc.addresses = list.filter((a) => !expiredIds.has(String(a.id || a._id)));
+      if (expiredIds.has(String(acc.selectedAddressId))) {
+        acc.selectedAddressId = acc.addresses[0]?.id || '';
+      }
+      removedCount += expired.length;
+      await saveFn();
+      if (typeof onDelete === 'function') {
+        for (const ex of expired) {
+          try { await onDelete(acc, ex); } catch (e) {}
+        }
+      }
+    };
+    if (mongoose.connection.readyState === 1) {
+      const accs = await MongooseAccountModel.find({ 'addresses.0': { $exists: true } });
+      for (const acc of accs) {
+        await processAcc(acc, async () => {
+          acc.markModified('addresses');
+          await acc.save();
+        });
+      }
+      return removedCount;
+    }
+    for (const acc of memAccounts.values()) {
+      await processAcc(acc, async () => {});
+    }
+    return removedCount;
   },
 };
 

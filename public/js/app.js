@@ -1218,6 +1218,32 @@ function filterMenuDishes() {
 	renderMenuItems();
 }
 
+function cycleMenuPriceSort() {
+	const cur = state.menuPriceSort || '';
+	const next = cur === '' ? 'asc' : (cur === 'asc' ? 'desc' : '');
+	state.menuPriceSort = next;
+	const btn = document.getElementById('btnMenuPriceSort');
+	if (btn) {
+		if (next === 'asc') {
+			btn.textContent = '↑ Low to High';
+			btn.style.borderColor = 'var(--primary)';
+			btn.style.color = 'var(--primary)';
+			btn.style.background = 'rgba(99, 102, 241, 0.08)';
+		} else if (next === 'desc') {
+			btn.textContent = '↓ High to Low';
+			btn.style.borderColor = 'var(--primary)';
+			btn.style.color = 'var(--primary)';
+			btn.style.background = 'rgba(99, 102, 241, 0.08)';
+		} else {
+			btn.textContent = '⇅ Low to High';
+			btn.style.borderColor = 'var(--border-color)';
+			btn.style.color = 'var(--text-muted)';
+			btn.style.background = 'var(--bg-card)';
+		}
+	}
+	renderMenuItems();
+}
+
 function toggleCategoryAccordion(catId) {
 	const listEl = document.getElementById(`cat-dishes-${catId}`);
 	const chevEl = document.getElementById(`cat-chev-${catId}`);
@@ -1263,6 +1289,11 @@ function renderMenuItems() {
 	for (const [catName, catDishes] of categoriesMap.entries()) {
 		catIndex++;
 		const catId = `cat_${catIndex}`;
+		if (state.menuPriceSort === 'asc') {
+			catDishes.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+		} else if (state.menuPriceSort === 'desc') {
+			catDishes.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+		}
 		html += `
       <div class="category-section">
         <div class="category-header" onclick="toggleCategoryAccordion('${catId}')">

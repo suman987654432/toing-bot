@@ -215,13 +215,38 @@ const otpSessions = new Map();
 if (!global.placedOrdersByUser) {
 	global.placedOrdersByUser = new Map();
 }
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 const getUserPlacedOrders = (tgUserId) => {
 	const uid = String(tgUserId || 'default');
 	if (!global.placedOrdersByUser.has(uid)) {
 		global.placedOrdersByUser.set(uid, []);
 	}
-	return global.placedOrdersByUser.get(uid);
+	const list = global.placedOrdersByUser.get(uid);
+	const cutoff = Date.now() - TWO_HOURS_MS;
+	const fresh = list.filter((o) => !o.createdAt || Number(o.createdAt) > cutoff);
+	if (fresh.length !== list.length) {
+		global.placedOrdersByUser.set(uid, fresh);
+	}
+	return fresh;
 };
+// Auto-purge expired (>2 hrs) order history and saved addresses every 5 minutes
+if (!global.twoHourCleanupTimer) {
+	global.twoHourCleanupTimer = setInterval(async () => {
+		const cutoff = Date.now() - TWO_HOURS_MS;
+		for (const [uid, list] of global.placedOrdersByUser.entries()) {
+			const fresh = (list || []).filter((o) => !o.createdAt || Number(o.createdAt) > cutoff);
+			if (fresh.length !== list.length) global.placedOrdersByUser.set(uid, fresh);
+		}
+		try {
+			await AccountRepo.cleanupExpiredAddresses(TWO_HOURS_MS, (acc, addr) => {
+				if (acc.tid && acc.token && addr.id && !String(addr.id).startsWith('addr_')) {
+					SwiggyService.deleteAddress(addr.id, acc.tid, acc.token).catch(() => {});
+				}
+			});
+		} catch (e) {}
+	}, 5 * 60 * 1000);
+	if (typeof global.twoHourCleanupTimer.unref === 'function') global.twoHourCleanupTimer.unref();
+}
 // Extract Telegram User ID (or browser client ID) from request
 const getTgUserId = (req) => {
 	const raw = req.headers['x-tg-user-id'] || req.query?.tgUserId || req.body?.tgUserId || 'default';
@@ -903,6 +928,7 @@ router.post('/addresses/add-link', async (req, res) => {
 			lng: finalLng,
 			tag: 'OTHER',
 			isAccountAddress: true,
+			addedAt: Date.now(),
 		};
 		await AccountRepo.addAddress(active._id, newAddress);
 		await AccountRepo.setSelectedAddress(active._id, newAddress.id);
@@ -983,6 +1009,7 @@ router.post('/addresses/add-manual', async (req, res) => {
 			lng: finalLng,
 			tag: tag || 'OTHER',
 			isAccountAddress: true,
+			addedAt: Date.now(),
 		};
 		await AccountRepo.addAddress(active._id, newAddress);
 		await AccountRepo.setSelectedAddress(active._id, newAddress.id);
@@ -1389,10 +1416,14 @@ router.post('/cart/update', async (req, res) => {
 		const deliveryStrikeOff = deliveryRow?.intermediateText || d.deliveryChargeStrikeOffAmount || (rawDeliveryFee > 0 ? String(rawDeliveryFee) : '25');
 		const taxes = Number(d.total_tax ?? d.taxes?.GST ?? 0);
 		const packingCharges = Number(d.total_packing_charges ?? 0);
-		const couponDiscount = Number(d.coupon_discount_total ?? 0);
+		const rawCouponDiscount = Number(d.coupon_discount_total ?? 0);
+		const isBhimApplied = bhimStatus === 'applied' || String(d.coupon_applied || '').toUpperCase() === 'BHIMNEW';
+		const bhimExtraDeduct = (isBhimApplied && rawCouponDiscount === 0 && itemSubtotal >= 99) ? 50 : 0;
+		const couponDiscount = rawCouponDiscount > 0 ? rawCouponDiscount : bhimExtraDeduct;
 		const rewardRow = (d.rendering_details || []).find((r) => r.key === 'offerCashReward');
 		const referralCash = rewardRow ? Math.abs(Math.round(Number(rewardRow.value || 0))) : Math.abs(Math.round(Number(d.swiggy_money || 0)));
 		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount - referralCash));
+		const baseOrderTotal = (isFreeDelivery && rawDeliveryFee > 0) ? calcOrderTotal : Math.max(0, Math.round(Number(d.order_total ?? calcOrderTotal) - bhimExtraDeduct));
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
 			itemTotal: itemSubtotal,
 			strikeOffItemTotal: itemTotalRow?.intermediateText || '',
@@ -1404,8 +1435,8 @@ router.post('/cart/update', async (req, res) => {
 			packingCharges,
 			couponDiscount,
 			referralCash,
-			couponApplied: d.coupon_applied || '',
-			orderTotal: isFreeDelivery && rawDeliveryFee > 0 ? calcOrderTotal : Number(d.order_total ?? calcOrderTotal),
+			couponApplied: d.coupon_applied || (bhimStatus === 'applied' ? 'BHIMNEW' : ''),
+			orderTotal: baseOrderTotal,
 		} : null;
 		res.json({
 			...result,
@@ -1567,10 +1598,16 @@ router.get('/orders', async (req, res) => {
 				}
 			} catch (e) {}
 		}
-		// Combine confirmed session orders with live orders (skip unpaid PAYMENT_PENDING orders)
+		// Combine confirmed session orders with live orders (skip unpaid PAYMENT_PENDING and >2hr expired orders)
+		const cutoff = Date.now() - TWO_HOURS_MS;
+		const freshLiveOrders = liveOrdersList.filter((o) => {
+			if (!o.order_time || o.order_time === 'Just now') return true;
+			const ts = Date.parse(String(o.order_time).replace(' ', 'T') + (String(o.order_time).includes('Z') || String(o.order_time).includes('+') ? '' : '+05:30'));
+			return isNaN(ts) || ts > cutoff;
+		});
 		const userOrders = getUserPlacedOrders(tgUserId).filter((o) => o.order_status !== 'PAYMENT_PENDING');
 		const seen = new Set(userOrders.map((o) => String(o.order_id)));
-		const allOrders = [...userOrders, ...liveOrdersList.filter((o) => !seen.has(String(o.order_id)))];
+		const allOrders = [...userOrders, ...freshLiveOrders.filter((o) => !seen.has(String(o.order_id)))];
 		res.json({
 			success: true,
 			data: {
@@ -1808,6 +1845,7 @@ router.post('/orders/place', async (req, res) => {
 			receiver_name: selected.name || active?.userName || '',
 			receiver_phone: selected.mobile || active?.phone || '',
 			order_time: 'Just now',
+			createdAt: Date.now(),
 			payment_method: upiVpa ? 'UPI' : (paymentMethod || 'UPIIntent'),
 			items: (items || []).map((i) => ({
 				name: i.name,

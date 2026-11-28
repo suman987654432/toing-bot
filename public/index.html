@@ -3734,6 +3734,9 @@ button:disabled {
           </svg>
           <input type="text" id="menuDishSearch" placeholder="Search dishes in this restaurant" oninput="filterMenuDishes()" />
         </div>
+        <div style="display:flex; justify-content:flex-end; margin:8px 0 6px;">
+          <button type="button" id="btnMenuPriceSort" onclick="cycleMenuPriceSort()" style="background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-muted); border-radius:999px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:5px;">⇅ Low to High</button>
+        </div>
 
         <!-- Menu Categories & Dishes Container -->
         <div id="menuItemsList" class="menu-items-box">
@@ -4257,6 +4260,6 @@ button:disabled {
 
   </div>
 
-  <script src="/js/app.js?v=20261127_18"></script>
+  <script src="/js/app.js?v=20261128_1"></script>
 </body>
 </html>
