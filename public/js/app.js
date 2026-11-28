@@ -2789,15 +2789,15 @@ async function openOrderDetails(orderId) {
 			|| `https://www.swiggy.com/track-order/${orderId}`;
 		// Extract full Bill Details
 		const charges = ord.charges || {};
-		const itemTotal = Number(ord.item_total || items.reduce((s, it) => s + Number(it.sub_total || it.item_total || (it.cost ? it.cost / 100 : 0)), 0) || total);
+		const itemsSum = Math.round(items.reduce((s, it) => s + Number(it.sub_total || it.final_price || it.item_total || (it.cost ? it.cost / 100 : 0)), 0) * 100) / 100;
+		const itemTotal = itemsSum > 0 ? itemsSum : Number(ord.item_total || total);
 		const deliveryFee = Number(ord.delivery_charges ?? charges['Total Delivery Fees'] ?? charges['Delivery Charges'] ?? 0);
 		const packingFee = Number(charges['Packing Charges'] || 0) + Number(charges['Convenience Fee'] || 0) + Number(charges['Service Charges'] || 0);
 		const taxes = Math.round((Number(ord.order_tax ?? charges['GST'] ?? 0) + packingFee) * 100) / 100;
 		const couponDisc = Number(ord.coupon_discount || 0);
-		const otherDisc = Math.max(0, Number(ord.order_discount || 0) + Number(ord.trade_discount || 0) + Number(ord.payment_offer_instant_discount || 0));
-		const computedDiff = Math.max(0, Math.round((itemTotal + deliveryFee + taxes - couponDisc - otherDisc - total) * 100) / 100);
-		const freeCashDisc = otherDisc > 0 ? otherDisc : (couponDisc === 0 && computedDiff > 0 ? computedDiff : 0);
-		const finalCouponDisc = couponDisc > 0 ? couponDisc : (freeCashDisc === 0 && computedDiff > 0 ? computedDiff : 0);
+		const actualDiff = Math.max(0, Math.round((itemTotal + deliveryFee + taxes - couponDisc - total) * 100) / 100);
+		const freeCashDisc = actualDiff > 0.5 ? Math.round(actualDiff * 100) / 100 : 0;
+		const finalCouponDisc = couponDisc > 0 ? couponDisc : 0;
 		const rawPm = String(ord.payment_method || ord.payment_method_involved || cached?.payment_method || 'UPI');
 		const payLabel = /cash|cod/i.test(rawPm) ? 'COD' : (/upi/i.test(rawPm) ? 'UPI' : rawPm.toUpperCase());
 		// Delivery Address & Receiver Contact
