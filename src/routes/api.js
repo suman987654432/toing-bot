@@ -1754,7 +1754,7 @@ router.post('/orders/place', async (req, res) => {
 			});
 		}
 		const targetAddrId = String(reqAddressId || active?.selectedAddressId || '');
-		let selected = active?.addresses?.find((a) => String(a.id) === targetAddrId) || active?.addresses?.[0];
+		let selected = active?.addresses?.find((a) => String(a.id) === targetAddrId) || ((!reqLat || !reqLng) ? active?.addresses?.[0] : null);
 		// If JSON-imported account hasn't synced addresses yet, auto-fetch from Swiggy
 		if (!selected) {
 			try {
@@ -1797,8 +1797,8 @@ router.post('/orders/place', async (req, res) => {
 				});
 			}
 		}
-		const lat = selected.lat || 25.6074;
-		const lng = selected.lng || 85.1587;
+		const lat = Number(reqLat || selected.lat || 25.6074);
+		const lng = Number(reqLng || selected.lng || 85.1587);
 		let addressId = String(selected.id || active?.selectedAddressId || '');
 		const deliveryAddress = address || [selected.flat_no, selected.address, selected.address_line1].filter(Boolean).join(', ') || 'Delivery Address';
 		// Ensure addressId is a real Swiggy address ID belonging to the active account
@@ -1831,8 +1831,13 @@ router.post('/orders/place', async (req, res) => {
 					}, tid, token, userId);
 					if (swAdd?.success && swAdd.addressId) {
 						addressId = String(swAdd.addressId);
-					} else if (swiggyAddrs[0]?.id) {
-						addressId = String(swiggyAddrs[0].id);
+					} else {
+						const cityMatch = swiggyAddrs.find((a) => {
+							const aLat = Number(a.lat || a.actual_address?.location?.lat || 0);
+							const aLng = Number(a.lng || a.actual_address?.location?.lng || 0);
+							return aLat && aLng && Math.abs(aLat - Number(lat)) < 0.15 && Math.abs(aLng - Number(lng)) < 0.15;
+						});
+						if (cityMatch?.id) addressId = String(cityMatch.id);
 					}
 				}
 			}

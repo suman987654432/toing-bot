@@ -2185,7 +2185,7 @@ async function handlePlaceOrder() {
 				restaurantName: state.cart.restaurantName,
 				total,
 				address: formatFullAddress(state.selectedAddress) || 'Delivery Address',
-				addressId: state.selectedAddressId || state.selectedAddress?.id || '',
+				addressId: state.selectedAddress?.id || state.selectedAddressId || '',
 				lat: state.selectedAddress?.lat,
 				lng: state.selectedAddress?.lng,
 				couponCode: state.cart.couponCode,
@@ -2793,9 +2793,7 @@ async function openOrderDetails(orderId) {
 		const dpText = dpName ? `${dpName}${dpPhone ? ' | ' + dpPhone : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
 		// Tracking link
 		const ofoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token || '';
-		const trackUrl = ord.ofo_tracking_url
-			|| data.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+		const trackUrl = ord.ofo_tracking_url || data.ofo_tracking_url || `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
 		// Extract full Bill Details (prefer official Swiggy rendering_details first)
 		const charges = ord.charges || {};
 		const rd = Array.isArray(ord.rendering_details) ? ord.rendering_details : [];
@@ -3092,9 +3090,7 @@ async function openLiveTrackModal(orderId) {
 				}).join('')}
 			</div>`;
 		const ofoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token || '';
-		const trackUrl = ord.ofo_tracking_url
-			|| data.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+		const trackUrl = ord.ofo_tracking_url || data.ofo_tracking_url || `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
 		bodyEl.innerHTML = `
 			<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
 				<div>
@@ -3279,6 +3275,7 @@ function pickLocPickerSuggestion(idx) {
 		name: item.area || 'Selected Location',
 		flat: item.display || item.area || ''
 	};
+	state.selectedAddressId = state.selectedAddress.id;
 	state.searchLocationConfirmed = true;
 	if (typeof updateDeliveryBanner === 'function') updateDeliveryBanner();
 	closeLocationPickerModal();
@@ -3319,6 +3316,7 @@ function pickCurrentLocationForSearch() {
 			name: area,
 			flat: display
 		};
+		state.selectedAddressId = state.selectedAddress.id;
 		state.searchLocationConfirmed = true;
 		if (typeof updateDeliveryBanner === 'function') updateDeliveryBanner();
 		closeLocationPickerModal();
