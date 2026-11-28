@@ -82,9 +82,9 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 			|| liveOrder?.message_id
 			|| ord?.user_flow_info?.flow_data?.message_id
 			|| ord?.message_id
-			|| '';
+			|| orderId;
 		const trackUrl = sessionOrder?.ofo_tracking_url
-			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`);
+			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
 		const items = ord.order_items || ord.items || sessionOrder?.items || [];
 		const itemLines = items.map((it) => {
 			const qty = it.quantity || 1;
@@ -1698,9 +1698,9 @@ router.get('/orders/:id', async (req, res) => {
 			|| foundSessionOrder?.message_id
 			|| liveOrder?.user_flow_info?.flow_data?.message_id
 			|| liveOrder?.message_id
-			|| '';
+			|| req.params.id;
 		const ofoTrackingUrl = foundSessionOrder?.ofo_tracking_url
-			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${req.params.id}`);
+			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
 		res.json({
 			success: true,
 			order: foundSessionOrder || liveOrder || {
@@ -1907,10 +1907,8 @@ router.post('/orders/place', async (req, res) => {
 		const placeOfoToken = placeRes.ofoToken
 			|| placeRes.data?.data?.order_data?.user_flow_info?.flow_data?.message_id
 			|| placeRes.data?.data?.user_flow_info?.flow_data?.message_id;
-		const finalOfoToken = placeOfoToken || updateOfoToken || '';
-		const finalTrackUrl = finalOfoToken
-			? `https://www.swiggy.com/toing/ofo/track/${finalOfoToken}`
-			: `https://www.swiggy.com/track-order/${placeRes.orderId}`;
+		const finalOfoToken = placeOfoToken || updateOfoToken || placeRes.orderId;
+		const finalTrackUrl = `https://www.swiggy.com/toing/ofo/track/${finalOfoToken}`;
 		const newOrder = {
 			order_id: String(placeRes.orderId),
 			paas_id: String(placeRes.paasId || ''),

@@ -246,10 +246,8 @@ const initBot = (webAppUrl) => {
 				const trackMiniAppUrl = `${liveBase}${liveBase.includes('?') ? '&' : '?'}track=${encodeURIComponent(orderId)}`;
 				const ofoToken = ord?.user_flow_info?.flow_data?.message_id
 					|| ord?.message_id
-					|| '';
-				const toingTrackUrl = ofoToken
-					? `https://www.swiggy.com/toing/ofo/track/${ofoToken}`
-					: `https://www.swiggy.com/track-order/${orderId}`;
+					|| orderId;
+				const toingTrackUrl = `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
 				const keyboard = [
 					[{
 						text: '🔄 Refresh Status',

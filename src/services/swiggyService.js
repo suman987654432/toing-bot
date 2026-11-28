@@ -1362,7 +1362,7 @@ const SwiggyService = {
 				|| d.data?.user_flow_info?.flow_data?.message_id
 				|| od.message_id
 				|| '';
-			const ofoTrackingUrl = ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`;
+			const ofoTrackingUrl = `https://www.swiggy.com/toing/ofo/track/${ofoToken || orderId}`;
 			return {
 				success: d.statusCode === 0 && Boolean(orderId),
 				statusCode: d.statusCode,
