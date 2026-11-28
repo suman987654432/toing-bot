@@ -76,8 +76,15 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		const payText = /cash|cod/i.test(rawPm) ? 'ᴄᴏᴅ' : (/upi/i.test(rawPm) ? 'ᴜᴘɪ' : toSmallCaps(rawPm));
 		const rawStatus = trackData?.order_status || ord.order_status || 'Order Received!';
 		const statusText = toSmallCaps(rawStatus.replace(/_/g, ' '));
-		const botUser = String(process.env.BOT_USERNAME || 'Toingpro_bot').replace(/^@/, '');
-		const trackUrl = `https://t.me/${botUser}?start=track_${orderId}`;
+		const ofoToken = sessionOrder?.ofo_token
+			|| sessionOrder?.message_id
+			|| liveOrder?.user_flow_info?.flow_data?.message_id
+			|| liveOrder?.message_id
+			|| ord?.user_flow_info?.flow_data?.message_id
+			|| ord?.message_id
+			|| '';
+		const trackUrl = sessionOrder?.ofo_tracking_url
+			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`);
 		const items = ord.order_items || ord.items || sessionOrder?.items || [];
 		const itemLines = items.map((it) => {
 			const qty = it.quantity || 1;
@@ -1679,6 +1686,13 @@ router.get('/orders/:id', async (req, res) => {
 				trackData = tRes.data || null;
 			} catch (e) {}
 		}
+		const ofoToken = foundSessionOrder?.ofo_token
+			|| foundSessionOrder?.message_id
+			|| liveOrder?.user_flow_info?.flow_data?.message_id
+			|| liveOrder?.message_id
+			|| '';
+		const ofoTrackingUrl = foundSessionOrder?.ofo_tracking_url
+			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${req.params.id}`);
 		res.json({
 			success: true,
 			order: foundSessionOrder || liveOrder || {
@@ -1686,6 +1700,9 @@ router.get('/orders/:id', async (req, res) => {
 			},
 			liveOrder,
 			trackData,
+			ofo_token: ofoToken,
+			ofo_tracking_url: ofoTrackingUrl,
+			tracking_url: ofoTrackingUrl,
 		});
 	} catch (err) {
 		res.status(500).json({
@@ -1786,6 +1803,12 @@ router.post('/orders/place', async (req, res) => {
 		const cartPayload = {
 			address_nudge_check: false,
 			batch_opt_in: false,
+			user_flow_info: {
+				flow_type: 'ofo',
+				flow_data: {
+					recipient_name: selected.name || active?.userName || 'Customer'
+				}
+			},
 			cartLatLong: {
 				lat: Number(lat),
 				lng: Number(lng)
@@ -1863,6 +1886,7 @@ router.post('/orders/place', async (req, res) => {
 			lng,
 			cookingRequest: cookingRequest || '',
 			cartId,
+			recipientName: selected.name || active?.userName || 'Customer',
 		}, tid, token, userId);
 		if (!placeRes.success || !placeRes.orderId) {
 			return res.status(400).json({
@@ -1871,9 +1895,20 @@ router.post('/orders/place', async (req, res) => {
 				details: placeRes.data || placeRes.error,
 			});
 		}
+		const updateOfoToken = updateRes?.data?.data?.user_flow_info?.flow_data?.message_id;
+		const placeOfoToken = placeRes.ofoToken
+			|| placeRes.data?.data?.order_data?.user_flow_info?.flow_data?.message_id
+			|| placeRes.data?.data?.user_flow_info?.flow_data?.message_id;
+		const finalOfoToken = placeOfoToken || updateOfoToken || '';
+		const finalTrackUrl = finalOfoToken
+			? `https://www.swiggy.com/toing/ofo/track/${finalOfoToken}`
+			: `https://www.swiggy.com/track-order/${placeRes.orderId}`;
 		const newOrder = {
 			order_id: String(placeRes.orderId),
 			paas_id: String(placeRes.paasId || ''),
+			ofo_token: finalOfoToken,
+			ofo_tracking_url: finalTrackUrl,
+			tracking_url: finalTrackUrl,
 			restaurant_name: restaurantName || 'Toing Pro Restaurant',
 			order_total: String(placeRes.amount || total || '0'),
 			order_status: 'PAYMENT_PENDING',
@@ -1904,6 +1939,9 @@ router.post('/orders/place', async (req, res) => {
 			success: true,
 			order_id: newOrder.order_id,
 			paas_id: newOrder.paas_id,
+			ofo_token: newOrder.ofo_token,
+			ofo_tracking_url: newOrder.ofo_tracking_url,
+			tracking_url: newOrder.ofo_tracking_url,
 			amount: newOrder.order_total,
 			upi_uri: placeRes.upiUri || '',
 			payment_code: upiVpa ? 'UPI' : 'UPIIntent',

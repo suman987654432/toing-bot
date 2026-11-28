@@ -244,6 +244,12 @@ const initBot = (webAppUrl) => {
 				}
 				const liveBase = getLiveWebAppUrl();
 				const trackMiniAppUrl = `${liveBase}${liveBase.includes('?') ? '&' : '?'}track=${encodeURIComponent(orderId)}`;
+				const ofoToken = ord?.user_flow_info?.flow_data?.message_id
+					|| ord?.message_id
+					|| '';
+				const toingTrackUrl = ofoToken
+					? `https://www.swiggy.com/toing/ofo/track/${ofoToken}`
+					: `https://www.swiggy.com/track-order/${orderId}`;
 				const keyboard = [
 					[{
 						text: '🔄 Refresh Status',
@@ -255,7 +261,11 @@ const initBot = (webAppUrl) => {
 							url: trackMiniAppUrl
 						},
 						style: 'success'
-					}, ],
+					}],
+					[{
+						text: '🌐 Toing Tracking Link',
+						url: toingTrackUrl
+					}],
 					[{
 						text: '🏠 Main Menu',
 						callback_data: 'wallet_back_start',

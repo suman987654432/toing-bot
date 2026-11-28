@@ -1328,6 +1328,12 @@ const SwiggyService = {
 			address_id: String(orderData.addressId || ''),
 			payment_cod_method: isUpiCollect ? 'UPI' : 'UPIIntent',
 			order_comments: String(orderData.cookingRequest || ''),
+			user_flow_info: {
+				flow_type: 'ofo',
+				flow_data: {
+					recipient_name: String(orderData.recipientName || 'Customer')
+				}
+			},
 		};
 		try {
 			const extraHeaders = {};
@@ -1352,12 +1358,19 @@ const SwiggyService = {
 			const paasId = String(od.payment_txn_id || od.payment_info_v2?.payment_transactions?.[0]?.marketplace_reference_id || od.targeted_marketplace_payment_reference_id || '');
 			const rawStr = JSON.stringify(d);
 			const upiMatch = rawStr.match(/upi:\/\/pay\?[^"\\]+/);
+			const ofoToken = od.user_flow_info?.flow_data?.message_id
+				|| d.data?.user_flow_info?.flow_data?.message_id
+				|| od.message_id
+				|| '';
+			const ofoTrackingUrl = ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`;
 			return {
 				success: d.statusCode === 0 && Boolean(orderId),
 				statusCode: d.statusCode,
 				statusMessage: d.statusMessage || '',
 				orderId,
 				paasId,
+				ofoToken,
+				ofoTrackingUrl,
 				amount: od.order_total || amount,
 				upiUri: upiMatch ? upiMatch[0] : '',
 				data: d,

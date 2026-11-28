@@ -845,8 +845,8 @@ function renderManualSuggestRows(list, isTopBox = false) {
 		`;
 	}).join('');
 }
-
 let topManualSuggestTimer = null;
+
 function onManualTopSearchInput(val) {
 	state.manualLat = null;
 	state.manualLng = null;
@@ -2781,8 +2781,12 @@ async function openOrderDetails(orderId) {
 		const dpName = ordDp.name || trackDp.name || '';
 		const dpPhone = ordDp.mobile || ordDp.phone || trackDp.mobile || trackDp.phone || '';
 		const dpText = dpName ? `${dpName}${dpPhone ? ' | ' + dpPhone : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
-		// Tracking link — deep link into our Telegram bot
-		const trackUrl = `https://t.me/Toingpro_bot?start=track_${orderId}`;
+		// Tracking link
+		const ofoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token || '';
+		const trackUrl = ord.ofo_tracking_url
+			|| data.ofo_tracking_url
+			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : '')
+			|| `https://www.swiggy.com/track-order/${orderId}`;
 		// Extract full Bill Details
 		const charges = ord.charges || {};
 		const itemTotal = Number(ord.item_total || items.reduce((s, it) => s + Number(it.sub_total || it.item_total || (it.cost ? it.cost / 100 : 0)), 0) || total);
@@ -3023,7 +3027,6 @@ async function handleScratchCard() {
 		showToast('Cards unlocked!');
 	}
 }
-
 async function openLiveTrackModal(orderId) {
 	const titleEl = document.getElementById('orderModalTitle');
 	const bodyEl = document.getElementById('orderModalBody');
@@ -3047,20 +3050,21 @@ async function openLiveTrackModal(orderId) {
 		const dpName = ordDp.name || trackDp.name || '';
 		const dpPhone = ordDp.mobile || ordDp.phone || trackDp.mobile || trackDp.phone || '';
 		const isCancelled = /CANCEL|FAIL|REJECT/.test(rawStatus);
-		const stepIdx = /DELIVERED/.test(rawStatus) ? 3
-			: /PICKED|OUT_FOR|ARRIVING|DISPATCH/.test(rawStatus) ? 2
-			: /PREPAR|COOK|ACCEPT|CONFIRMED|RECEIVED/.test(rawStatus) ? 1 : 0;
-
-		const steps = [
-			{ label: 'Order Placed', icon: '🧾' },
-			{ label: 'Preparing Food', icon: '🍳' },
-			{ label: 'Out for Delivery', icon: '🛵' },
-			{ label: 'Delivered', icon: '✅' }
-		];
-
-		const stepperHtml = isCancelled
-			? `<div style="background:rgba(239,68,68,0.12); color:#dc2626; padding:12px; border-radius:12px; font-weight:700; text-align:center; margin:12px 0;">❌ Order ${cleanStatus}</div>`
-			: `<div style="display:flex; flex-direction:column; gap:10px; margin:14px 0; padding:12px; background:var(--input-bg); border-radius:12px; border:1px solid var(--border-color);">
+		const stepIdx = /DELIVERED/.test(rawStatus) ? 3 : /PICKED|OUT_FOR|ARRIVING|DISPATCH/.test(rawStatus) ? 2 : /PREPAR|COOK|ACCEPT|CONFIRMED|RECEIVED/.test(rawStatus) ? 1 : 0;
+		const steps = [{
+			label: 'Order Placed',
+			icon: '🧾'
+		}, {
+			label: 'Preparing Food',
+			icon: '🍳'
+		}, {
+			label: 'Out for Delivery',
+			icon: '🛵'
+		}, {
+			label: 'Delivered',
+			icon: '✅'
+		}];
+		const stepperHtml = isCancelled ? `<div style="background:rgba(239,68,68,0.12); color:#dc2626; padding:12px; border-radius:12px; font-weight:700; text-align:center; margin:12px 0;">❌ Order ${cleanStatus}</div>` : `<div style="display:flex; flex-direction:column; gap:10px; margin:14px 0; padding:12px; background:var(--input-bg); border-radius:12px; border:1px solid var(--border-color);">
 				${steps.map((st, idx) => {
 					const done = idx <= stepIdx;
 					const active = idx === stepIdx;
@@ -3071,7 +3075,11 @@ async function openLiveTrackModal(orderId) {
 					</div>`;
 				}).join('')}
 			</div>`;
-
+		const ofoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token || '';
+		const trackUrl = ord.ofo_tracking_url
+			|| data.ofo_tracking_url
+			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : '')
+			|| `https://www.swiggy.com/track-order/${orderId}`;
 		bodyEl.innerHTML = `
 			<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
 				<div>
@@ -3090,15 +3098,18 @@ async function openLiveTrackModal(orderId) {
 				</div>
 			</div>
 			<button type="button" class="btn-primary" style="width:100%;" onclick="openLiveTrackModal('${orderId}')">🔄 Refresh Live Status</button>
+			<a href="${trackUrl}" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; margin-top:8px; padding:9px; background:rgba(249,115,22,0.12); color:#ea580c; border-radius:10px; text-decoration:none; font-weight:700; font-size:12.5px;">🌐 Open Toing Tracking Page ›</a>
 		`;
 	} catch (e) {
 		bodyEl.innerHTML = `<div style="color:#dc2626; font-weight:700; padding:12px 0;">❌ Live tracking load nahi ho paya: ${e.message}</div>
 		<button type="button" class="btn-primary" style="width:100%;" onclick="openLiveTrackModal('${orderId}')">🔄 Retry</button>`;
 	}
 }
+
 function openStoreBot() {
 	openBotTracking('https://t.me/CodeAddabot');
 }
+
 function openBotTracking(url) {
 	const tg = window.Telegram?.WebApp;
 	if (tg && typeof tg.openTelegramLink === 'function') {
@@ -3115,7 +3126,6 @@ function openBotTracking(url) {
 	}
 	window.open(url, '_blank', 'noopener,noreferrer');
 }
-
 // ==========================================
 // SELECT YOUR LOCATION BOTTOM SHEET (SEARCH TAB)
 // ==========================================
@@ -3136,7 +3146,6 @@ function openLocationPickerModal() {
 	if (gpsSub) gpsSub.textContent = 'Using GPS';
 	_locPickerSuggestions = [];
 	modal.classList.remove('hidden');
-
 	if ((!state.addresses || state.addresses.length === 0) && state.activeAccount && typeof loadAddresses === 'function') {
 		const listEl = document.getElementById('locPickerSavedList');
 		if (listEl) listEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:10px 0;">Loading saved addresses...</div>';
@@ -3159,7 +3168,6 @@ function renderLocPickerSavedAddresses() {
 		listEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); padding:12px; border:1px dashed var(--border-color); border-radius:10px; text-align:center;">No saved addresses found. Use GPS or search above.</div>';
 		return;
 	}
-
 	listEl.innerHTML = addrs.map(addr => {
 		const id = String(addr.id || addr.address_id || '');
 		const isSelected = state.selectedAddress && String(state.selectedAddress.id || state.selectedAddress.address_id) === id;
@@ -3168,10 +3176,7 @@ function renderLocPickerSavedAddresses() {
 		const isAccountAddr = !!(addr.is_account_address || addr.source === 'account' || addr.accountAddress);
 		const name = addr.name || addr.contact_name || addr.annotation || addr.area || 'Address';
 		const phone = addr.phone || addr.mobile || addr.contact_phone || '';
-		const fullAddr = typeof formatFullAddress === 'function'
-			? formatFullAddress(addr)
-			: [addr.flat, addr.building, addr.landmark, addr.area, addr.city, addr.pincode].filter(Boolean).join(', ');
-
+		const fullAddr = typeof formatFullAddress === 'function' ? formatFullAddress(addr) : [addr.flat, addr.building, addr.landmark, addr.area, addr.city, addr.pincode].filter(Boolean).join(', ');
 		return `
 			<div onclick="selectLocationPickerAddress('${id.replace(/'/g, "\\'")}')" style="display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid ${isSelected ? 'var(--primary)' : 'var(--border-color)'}; border-radius:12px; background:${isSelected ? 'rgba(139,92,246,0.06)' : 'var(--bg-card)'}; cursor:pointer;">
 				<span style="color:var(--primary); font-size:15px; margin-top:2px;">📍</span>
@@ -3191,7 +3196,6 @@ function renderLocPickerSavedAddresses() {
 		`;
 	}).join('');
 }
-
 async function selectLocationPickerAddress(addressId) {
 	state.searchLocationConfirmed = true;
 	closeLocationPickerModal();
@@ -3208,7 +3212,6 @@ function onLocPickerSearchInput() {
 	const list = document.getElementById('locPickerSuggestList');
 	if (!input || !list) return;
 	const q = input.value.trim();
-
 	if (_locPickerSearchTimer) clearTimeout(_locPickerSearchTimer);
 	if (q.length < 3) {
 		_locPickerSuggestions = [];
@@ -3216,7 +3219,6 @@ function onLocPickerSearchInput() {
 		list.classList.add('hidden');
 		return;
 	}
-
 	_locPickerSearchTimer = setTimeout(async () => {
 		try {
 			const res = await fetch(`/api/addresses/suggest?q=${encodeURIComponent(q)}`);
@@ -3277,14 +3279,12 @@ function pickCurrentLocationForSearch() {
 		return;
 	}
 	if (gpsSub) gpsSub.textContent = 'Fetching current GPS location...';
-
 	navigator.geolocation.getCurrentPosition(async (pos) => {
 		const lat = pos.coords.latitude;
 		const lng = pos.coords.longitude;
 		let area = 'Current Location';
 		let city = '';
 		let display = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-
 		try {
 			const res = await fetch(`/api/addresses/reverse-geocode?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);
 			const data = await res.json();
@@ -3294,7 +3294,6 @@ function pickCurrentLocationForSearch() {
 				display = data.display || data.area || display;
 			}
 		} catch (e) {}
-
 		state.selectedAddress = {
 			id: 'gps_current_' + Date.now(),
 			annotation: 'Current Location',
