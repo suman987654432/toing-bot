@@ -363,6 +363,11 @@ const initBot = (webAppUrl) => {
 					style: 'danger'
 				}, ],
 				[{
+					text: '🎁 Mass Credit (All Users)',
+					callback_data: 'adm_mass_credit',
+					style: 'success'
+				}, ],
+				[{
 					text: '⚙️ Fee & Min Deposit',
 					callback_data: 'adm_fees',
 					style: 'primary'
@@ -515,6 +520,159 @@ const initBot = (webAppUrl) => {
 					text: userMsg,
 					parse_mode: 'Markdown'
 				}).catch(() => {});
+			}
+		};
+		const renderMassCreditAmountPicker = async (chatId, messageId = null) => {
+			const ids = await WalletRepo.getAllUserIds();
+			adminPending.set(String(chatId), {
+				action: 'await_mass_credit_amt'
+			});
+			const text = `🎁 *MASS CREDIT (ALL USERS)*\n\n` +
+				`👥 *Total Eligible Users:* ${ids.length}\n\n` +
+				`Aap ek click me sabhi users ke wallet me paise add kar sakte hain.\n\n` +
+				`Neeche se **Quick Amount** select karein ya chat me custom amount likhein (e.g. \`25\`):`;
+			const keyboard = [
+				[{
+					text: '➕ ₹5 Sabko',
+					callback_data: 'adm_mass_amt_5',
+					style: 'success'
+				}, {
+					text: '➕ ₹10 Sabko',
+					callback_data: 'adm_mass_amt_10',
+					style: 'success'
+				}],
+				[{
+					text: '➕ ₹20 Sabko',
+					callback_data: 'adm_mass_amt_20',
+					style: 'success'
+				}, {
+					text: '➕ ₹50 Sabko',
+					callback_data: 'adm_mass_amt_50',
+					style: 'success'
+				}],
+				[{
+					text: '➕ ₹100 Sabko',
+					callback_data: 'adm_mass_amt_100',
+					style: 'success'
+				}],
+				[{
+					text: '🔙 Back to Admin',
+					callback_data: 'adm_home',
+					style: 'danger'
+				}]
+			];
+			await sendOrEdit(chatId, messageId, text, keyboard);
+		};
+		const renderMassCreditConfirm = async (chatId, messageId, rawAmt) => {
+			const amt = Math.abs(Number(rawAmt || 0));
+			if (!amt || isNaN(amt) || amt <= 0) {
+				await tgApi('sendMessage', {
+					chat_id: chatId,
+					text: '❌ Invalid amount. Positive number enter karein.'
+				});
+				return;
+			}
+			const ids = await WalletRepo.getAllUserIds();
+			const totalDisbursed = Math.round(amt * ids.length * 100) / 100;
+			adminPending.set(String(chatId), {
+				action: 'await_mass_credit_confirm',
+				amt
+			});
+			const text = `⚠️ *CONFIRM MASS WALLET CREDIT*\n\n` +
+				`• *Amount per User:* ₹${amt}\n` +
+				`• *Total Users:* ${ids.length}\n` +
+				`• *Total Money Added:* ₹${totalDisbursed}\n\n` +
+				`Kya aap confirm karte hain? Sabhi users ke wallet me ₹${amt} add ho jayenge aur sabko Telegram par message chala jayega.`;
+			const keyboard = [
+				[{
+					text: `✅ Confirm & Send ₹${amt} to All (${ids.length})`,
+					callback_data: `adm_mass_do_${amt}`,
+					style: 'success'
+				}],
+				[{
+					text: '❌ Cancel',
+					callback_data: 'adm_home',
+					style: 'danger'
+				}]
+			];
+			await sendOrEdit(chatId, messageId, text, keyboard);
+		};
+		const executeMassCredit = async (chatId, messageId, rawAmt) => {
+			const amt = Math.abs(Number(rawAmt || 0));
+			adminPending.delete(String(chatId));
+			if (!amt || isNaN(amt) || amt <= 0) return;
+
+			await sendOrEdit(chatId, messageId, `⏳ *Processing Mass Credit...*\n\nDatabase me sabhi users ke wallet update ho rahe hain...`);
+
+			const res = await WalletRepo.bulkCreditAllUsers(amt, `Admin Mass Credit (₹${amt})`);
+			if (!res.success) {
+				await sendOrEdit(chatId, messageId, `❌ Failed: ${res.error}`, [
+					[{ text: '🔙 Back to Admin', callback_data: 'adm_home', style: 'primary' }]
+				]);
+				return;
+			}
+
+			const totalUsers = res.count || 0;
+			const totalDisbursed = Math.round(amt * totalUsers * 100) / 100;
+
+			await sendOrEdit(chatId, messageId, `🎉 *MASS CREDIT SUCCESSFUL!*\n\n` +
+				`• *Amount Added per User:* ₹${amt}\n` +
+				`• *Wallets Updated:* ${totalUsers}\n` +
+				`• *Total Money Added:* ₹${totalDisbursed}\n\n` +
+				`📲 *Users ko background me notification bhejna shuru ho gaya hai...*`, [
+				[{ text: '👑 Admin Panel', callback_data: 'adm_home', style: 'primary' }]
+			]);
+
+			// Background notification loop (rate-limited batching)
+			const targetIds = res.userIds || [];
+			if (targetIds.length > 0) {
+				(async () => {
+					let sent = 0;
+					let failed = 0;
+					const BATCH_SIZE = 15;
+					const notifyMsg = `🎁 *WALLET CREDITED!*\n\nAdmin ne aapke wallet me *₹${amt}* add kiye hain!\nAb aap Toing Pro se order karne ke liye apna wallet use kar sakte hain. 🚀`;
+
+					for (let i = 0; i < targetIds.length; i += BATCH_SIZE) {
+						const batch = targetIds.slice(i, i + BATCH_SIZE);
+						await Promise.all(batch.map(async (targetId) => {
+							try {
+								await tgApi('sendMessage', {
+									chat_id: targetId,
+									text: notifyMsg,
+									parse_mode: 'Markdown'
+								});
+								sent++;
+							} catch (e) {
+								const retryAfter = e?.response?.data?.parameters?.retry_after;
+								if (retryAfter) {
+									await new Promise((r) => setTimeout(r, (Number(retryAfter) + 1) * 1000));
+									try {
+										await tgApi('sendMessage', {
+											chat_id: targetId,
+											text: notifyMsg,
+											parse_mode: 'Markdown'
+										});
+										sent++;
+										return;
+									} catch (e2) {}
+								}
+								failed++;
+							}
+						}));
+						if (i + BATCH_SIZE < targetIds.length) {
+							await new Promise((r) => setTimeout(r, 550));
+						}
+					}
+
+					await tgApi('sendMessage', {
+						chat_id: chatId,
+						text: `📊 *MASS CREDIT NOTIFICATION REPORT*\n\n` +
+							`• *Total Users:* ${targetIds.length}\n` +
+							`• *Delivered:* ${sent}\n` +
+							`• *Failed/Blocked:* ${failed}`,
+						parse_mode: 'Markdown'
+					}).catch(() => {});
+				})();
 			}
 		};
 		const renderUsersStatus = async (chatId, messageId, page = 1) => {
@@ -696,6 +854,17 @@ const initBot = (webAppUrl) => {
 				chat_id: uid,
 				text: `✅ Settings Updated!\n• Order Fee: ₹${updated.orderFee}\n• Min Deposit: ₹${updated.minDeposit}`,
 			});
+		});
+		bot.command('masscredit', async (ctx) => {
+			const uid = String(ctx.from?.id || '');
+			if (!isAdminUser(uid)) return;
+			const parts = (ctx.message?.text || '').trim().split(/\s+/);
+			const amt = parts[1] ? Number(parts[1]) : 0;
+			if (!amt || isNaN(amt) || amt <= 0) {
+				await renderMassCreditAmountPicker(uid, null);
+				return;
+			}
+			await renderMassCreditConfirm(uid, null, amt);
 		});
 		bot.command('start', async (ctx) => {
 			const tgUid = String(ctx.from?.id || 'default');
@@ -918,6 +1087,14 @@ const initBot = (webAppUrl) => {
 						await renderWalletUserPicker(chatId, messageId, 'add');
 					} else if (data === 'adm_wallet_ded') {
 						await renderWalletUserPicker(chatId, messageId, 'ded');
+					} else if (data === 'adm_mass_credit') {
+						await renderMassCreditAmountPicker(chatId, messageId);
+					} else if (data.startsWith('adm_mass_amt_')) {
+						const amt = data.replace('adm_mass_amt_', '');
+						await renderMassCreditConfirm(chatId, messageId, amt);
+					} else if (data.startsWith('adm_mass_do_')) {
+						const amt = data.replace('adm_mass_do_', '');
+						await executeMassCredit(chatId, messageId, amt);
 					} else if (data.startsWith('adm_w_user_')) {
 						const parts = data.split('_'); // adm_w_user_<mode>_<targetUid>
 						const mode = parts[3];
@@ -1155,6 +1332,16 @@ const initBot = (webAppUrl) => {
 					await renderWalletAmountPicker(uid, null, pending.mode, targetUid);
 				} else if (pending.action === 'await_wallet_amount') {
 					await executeWalletAdjust(uid, null, pending.mode, pending.targetUid, text);
+				} else if (pending.action === 'await_mass_credit_amt') {
+					const amt = Math.abs(Number(text));
+					if (!amt || isNaN(amt) || amt <= 0) {
+						await tgApi('sendMessage', {
+							chat_id: uid,
+							text: '❌ Invalid amount. Positive number enter karein (e.g. `20`).'
+						});
+						return;
+					}
+					await renderMassCreditConfirm(uid, null, amt);
 				} else if (pending.action === 'await_fees') {
 					const parts = text.split(/\s+/);
 					if (parts.length < 2 || isNaN(Number(parts[0])) || isNaN(Number(parts[1]))) {

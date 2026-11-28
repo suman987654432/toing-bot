@@ -37,6 +37,15 @@
 
         <button id="btnSave" onclick="saveSettings()">Save Settings</button>
         <div id="statusMsg" class="msg"></div>
+
+        <div style="margin-top:22px; padding-top:16px; border-top:1.5px dashed #e5e7eb;">
+          <h3 style="font-size:14px; font-weight:800; margin-bottom:4px;">🎁 Mass Wallet Credit (All Users)</h3>
+          <div class="sub" style="margin-bottom:10px;">Credit wallet balance to all registered users at once</div>
+          <label>Amount per User (₹)</label>
+          <input type="number" id="inMassAmount" min="1" step="1" placeholder="e.g. 20" />
+          <button id="btnMassCredit" onclick="doMassCredit()" style="background: linear-gradient(135deg, #10b981, #059669);">Send to All Users</button>
+          <div id="massStatusMsg" class="msg"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -92,6 +101,44 @@
       } finally {
         btn.disabled = false;
         btn.textContent = 'Save Settings';
+      }
+    }
+
+    async function doMassCredit() {
+      const btn = document.getElementById('btnMassCredit');
+      const msg = document.getElementById('massStatusMsg');
+      const amount = Number(document.getElementById('inMassAmount').value);
+      if (!amount || amount <= 0) {
+        msg.style.color = '#dc2626';
+        msg.textContent = 'Enter a valid amount greater than 0';
+        return;
+      }
+      if (!confirm(`Kya aap sach me sabhi users ko ₹${amount} credit karna chahte hain?`)) {
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+      try {
+        const res = await fetch('/api/admin/wallet/mass-credit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tg-user-id': tgUserId },
+          body: JSON.stringify({ amount, reason: `Web Admin Mass Credit (₹${amount})` })
+        });
+        const data = await res.json();
+        if (data.success) {
+          msg.style.color = '#16a34a';
+          msg.textContent = `🎉 Success! ₹${amount} credited to ${data.count || 0} users!`;
+          document.getElementById('inMassAmount').value = '';
+        } else {
+          msg.style.color = '#dc2626';
+          msg.textContent = data.error || 'Failed to credit';
+        }
+      } catch (e) {
+        msg.style.color = '#dc2626';
+        msg.textContent = 'Network error';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send to All Users';
       }
     }
 

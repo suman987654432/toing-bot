@@ -576,7 +576,7 @@ const SwiggyService = {
 			pbFieldStr(21, addrData.locality || addrData.area || addrData.city || 'Locality'),
 			pbFieldVarint(22, 1),
 			pbFieldStr(24, cleanPhone || '9999999999'),
-			pbFieldBytes(26, Buffer.from([3])),
+			pbFieldBytes(26, Buffer.from([4])),
 			pbFieldStr(29, addrData.address_line2 || addrData.city || 'Area'),
 			pbFieldBytes(33, pbFieldVarint(1, tagCode)),
 			pbFieldBytes(34, recMsg),
@@ -884,7 +884,8 @@ const SwiggyService = {
 						const gKey = `${isAddonGroup ? 'a' : 'v'}_${groupId || cleanGroupName}`;
 						if (!seenGroupIds.has(gKey)) {
 							seenGroupIds.add(gKey);
-							const isOptionalAddon = isAddonGroup && /add-on|addon|extra|dip|beverage|best seller/i.test(cleanGroupName) && !/choose/i.test(cleanGroupName);
+							const isRequiredChoice = !isAddonGroup || (/^(?:choose|select|pick)\b/i.test(cleanGroupName) && choices.length > 1);
+							const isOptionalAddon = !isRequiredChoice;
 							groups.push({
 								id: groupId || `grp_${groups.length}`,
 								name: cleanGroupName,

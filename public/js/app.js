@@ -2514,17 +2514,26 @@ function cancelPaymentFlow() {
 
 function openExternalUpi(uri) {
 	if (!uri) return;
-	const tgOpen = window.Telegram?.WebApp?.openLink;
-	if (tgOpen) {
-		// Telegram WebView throws net::ERR_UNKNOWN_URL_SCHEME on upi:// navigation;
-		// open an https:// launcher page in the external browser instead.
-		const launchUrl = `${window.location.origin}/api/upi-launch?uri=${encodeURIComponent(uri)}`;
+	const tg = window.Telegram?.WebApp;
+	const launchUrl = `${window.location.origin}/api/upi-launch?uri=${encodeURIComponent(uri)}`;
+	if (tg && typeof tg.openLink === 'function') {
 		try {
-			tgOpen.call(window.Telegram.WebApp, launchUrl, {
+			tg.openLink(launchUrl, {
 				try_instant_view: false
 			});
 			return;
 		} catch (e) {}
+	}
+	if (tg) {
+		// Inside Telegram WebView, never navigate directly to upi:// (causes ERR_UNKNOWN_URL_SCHEME)
+		window.open(launchUrl, '_blank', 'noopener,noreferrer');
+		return;
+	}
+	const isAndroid = /android/i.test(navigator.userAgent || '');
+	if (isAndroid && /^upi:\/\/pay/i.test(uri)) {
+		const q = uri.replace(/^upi:\/\/pay\??/i, '');
+		window.location.href = `intent://pay?${q}#Intent;scheme=upi;end`;
+		return;
 	}
 	window.location.href = uri;
 }

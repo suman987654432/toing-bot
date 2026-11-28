@@ -370,10 +370,111 @@ const WalletRepo = {
     };
   },
 
+  async bulkCreditAllUsers(amount, reason = 'Mass Admin Wallet Credit') {
+    const amt = Math.round(Number(amount || 0) * 100) / 100;
+    if (amt <= 0 || isNaN(amt)) {
+      return { success: false, error: 'Invalid credit amount' };
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      // 1. Gather all unique user IDs from WalletModel and Account
+      const walletUids = await WalletModel.distinct('telegramUserId');
+      let accountUids = [];
+      try {
+        if (mongoose.models.Account) {
+          accountUids = await mongoose.models.Account.distinct('telegramUserId');
+        }
+      } catch (e) {}
+
+      const allSet = new Set(
+        [...(walletUids || []), ...(accountUids || [])]
+          .map((id) => String(id).trim())
+          .filter(Boolean)
+      );
+
+      // Ensure any account not yet in Wallet collection has a document initialized
+      const missing = Array.from(allSet).filter((uid) => !(walletUids || []).includes(uid));
+      if (missing.length > 0) {
+        const initDocs = missing.map((uid) => ({
+          telegramUserId: uid,
+          balance: 0,
+          totalDeposited: 0,
+          totalOrders: 0,
+        }));
+        await WalletModel.insertMany(initDocs, { ordered: false }).catch(() => {});
+      }
+
+      // 2. High-speed bulk atomic increment for all users in one query
+      const updateRes = await WalletModel.updateMany(
+        {},
+        { $inc: { balance: amt, totalDeposited: amt } }
+      );
+
+      // 3. Batch insert transaction history records
+      const now = new Date();
+      const userList = Array.from(allSet);
+      const txns = userList.map((uid) => ({
+        telegramUserId: uid,
+        type: 'CREDIT',
+        amount: amt,
+        description: reason,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      // Insert in chunks of 500 for optimal memory and network performance
+      const CHUNK = 500;
+      for (let i = 0; i < txns.length; i += CHUNK) {
+        await WalletTxnModel.insertMany(txns.slice(i, i + CHUNK), { ordered: false }).catch(() => {});
+      }
+
+      const validTgIds = userList.filter((id) => /^\d+$/.test(id));
+      return {
+        success: true,
+        count: userList.length,
+        modifiedCount: updateRes.modifiedCount ?? userList.length,
+        amount: amt,
+        userIds: validTgIds,
+      };
+    }
+
+    // In-memory fallback
+    const all = Array.from(memWallets.values());
+    const validTgIds = [];
+    for (const w of all) {
+      w.balance = Math.round((Number(w.balance || 0) + amt) * 100) / 100;
+      w.totalDeposited = Math.round((Number(w.totalDeposited || 0) + amt) * 100) / 100;
+      memTxns.unshift({
+        telegramUserId: w.telegramUserId,
+        type: 'CREDIT',
+        amount: amt,
+        description: reason,
+        createdAt: new Date().toISOString(),
+      });
+      if (/^\d+$/.test(String(w.telegramUserId))) {
+        validTgIds.push(String(w.telegramUserId));
+      }
+    }
+    return {
+      success: true,
+      count: all.length,
+      modifiedCount: all.length,
+      amount: amt,
+      userIds: validTgIds,
+    };
+  },
+
   async getAllUserIds() {
     if (mongoose.connection.readyState === 1) {
       const ids = await WalletModel.distinct('telegramUserId');
-      return (ids || []).map((id) => String(id).trim()).filter((id) => /^\d+$/.test(id));
+      let accIds = [];
+      try {
+        if (mongoose.models.Account) {
+          accIds = await mongoose.models.Account.distinct('telegramUserId');
+        }
+      } catch (e) {}
+      const combined = new Set([...(ids || []), ...(accIds || [])].map((id) => String(id).trim()).filter((id) => /^\d+$/.test(id)));
+      return Array.from(combined);
     }
     return Array.from(memWallets.keys()).map((id) => String(id).trim()).filter((id) => /^\d+$/.test(id));
   },

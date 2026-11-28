@@ -1801,17 +1801,42 @@ router.post('/orders/place', async (req, res) => {
 		const lng = selected.lng || 85.1587;
 		let addressId = String(selected.id || active?.selectedAddressId || '');
 		const deliveryAddress = address || [selected.flat_no, selected.address, selected.address_line1].filter(Boolean).join(', ') || 'Delivery Address';
-		// Swiggy /api/v3/order/place rejects local "addr_*" IDs; resolve a real Swiggy address_id if needed
-		if (!addressId || addressId.startsWith('addr_')) {
-			try {
-				const swiggyAddrRes = await SwiggyService.getAddresses(tid, token, userId);
-				const swiggyAddrs = swiggyAddrRes?.addresses || [];
-				if (swiggyAddrs.length > 0) {
-					const realMatch = swiggyAddrs.find((a) => a.id && !String(a.id).startsWith('addr_'));
-					if (realMatch) addressId = String(realMatch.id);
+		// Ensure addressId is a real Swiggy address ID belonging to the active account
+		const isLocalAddrId = !addressId || /^(addr_|search_custom_|gps_current_)/i.test(addressId);
+		try {
+			const swiggyAddrRes = await SwiggyService.getAddresses(tid, token, userId);
+			const swiggyAddrs = Array.isArray(swiggyAddrRes?.addresses) ? swiggyAddrRes.addresses : [];
+			const existsOnAccount = !isLocalAddrId && swiggyAddrs.some((a) => String(a.id) === addressId);
+			if (!existsOnAccount) {
+				// 1. Check if active Swiggy account already has an address near these coordinates (~300m)
+				const nearMatch = swiggyAddrs.find((a) => {
+					const aLat = Number(a.lat || a.actual_address?.location?.lat || 0);
+					const aLng = Number(a.lng || a.actual_address?.location?.lng || 0);
+					return aLat && aLng && Math.abs(aLat - Number(lat)) < 0.003 && Math.abs(aLng - Number(lng)) < 0.003;
+				});
+				if (nearMatch?.id && !/^(addr_|search_custom_|gps_current_)/i.test(String(nearMatch.id))) {
+					addressId = String(nearMatch.id);
+				} else {
+					// 2. Auto-register the selected/preserved address on the active Swiggy account
+					const swAdd = await SwiggyService.addAddress({
+						name: selected.name || active?.userName || 'Customer',
+						phone: String(selected.phone || selected.mobile || active?.phone || '9999999999').replace(/\D/g, '').slice(-10) || '9999999999',
+						addressLine1: selected.flat_no || selected.address_line1 || selected.address || deliveryAddress || 'House 1',
+						addressLine2: selected.address_line2 || selected.area || '',
+						landmark: selected.landmark || '',
+						city: selected.city || 'India',
+						lat: Number(lat),
+						lng: Number(lng),
+						tag: selected.tag || 'OTHER',
+					}, tid, token, userId);
+					if (swAdd?.success && swAdd.addressId) {
+						addressId = String(swAdd.addressId);
+					} else if (swiggyAddrs[0]?.id) {
+						addressId = String(swiggyAddrs[0].id);
+					}
 				}
-			} catch (e) {}
-		}
+			}
+		} catch (e) {}
 		// Step 1: Sync cart with Swiggy Payments (/api/v3/update-cart)
 		const cartPayload = {
 			address_nudge_check: false,
@@ -1846,7 +1871,7 @@ router.post('/orders/place', async (req, res) => {
 				cost: Math.round(Number(i.price || 0) * 100),
 			})),
 		};
-		const updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId, {
+		let updateRes = await SwiggyService.updateCart(cartPayload, tid, token, userId, {
 			lat,
 			lng,
 			addressId,
@@ -1857,6 +1882,31 @@ router.post('/orders/place', async (req, res) => {
 				error: updateRes.data?.statusMessage || updateRes.error?.statusMessage || (typeof updateRes.error === 'string' ? updateRes.error : 'Swiggy cart sync failed.'),
 				details: updateRes.data || updateRes.error,
 			});
+		}
+		// Ensure Swiggy OFO flow (message_id token) is active; if old address had addressCategory !== 4, add an OFO address and re-sync cart
+		if (!updateRes.data?.data?.user_flow_info?.flow_data?.message_id) {
+			try {
+				const ofoAddrRes = await SwiggyService.addAddress({
+					lat,
+					lng,
+					name: selected.name || active?.userName || 'Customer',
+					phone: selected.mobile || selected.phone || active?.phone || '9999999999',
+					formatted_address: deliveryAddress,
+					flat_no: selected.flat_no || selected.address_line1 || 'House 1',
+					area: selected.area || selected.address_line2 || selected.city || 'India',
+					city: selected.city || 'Patna',
+					pincode: selected.pincode || '800001',
+					tagLabel: selected.name || 'Friends and Family',
+				}, tid, token, userId);
+				if (ofoAddrRes?.success && ofoAddrRes?.addressId) {
+					addressId = String(ofoAddrRes.addressId);
+					cartPayload.address_id = addressId;
+					const retryUpdate = await SwiggyService.updateCart(cartPayload, tid, token, userId, { lat, lng, addressId });
+					if (retryUpdate?.success && (!retryUpdate.data?.statusCode || retryUpdate.data.statusCode === 0)) {
+						updateRes = retryUpdate;
+					}
+				}
+			} catch (e) {}
 		}
 		const swiggyCartData = updateRes.data?.data || {};
 		let cartId = String(swiggyCartData.originalCartId || swiggyCartData.cartId || swiggyCartData.cart?.id || '');
@@ -2261,6 +2311,32 @@ router.post('/admin/settings', async (req, res) => {
 		});
 	}
 });
+router.post('/admin/wallet/mass-credit', async (req, res) => {
+	try {
+		const tgUserId = getTgUserId(req);
+		if (!isAdminUser(tgUserId)) {
+			return res.status(403).json({
+				success: false,
+				error: 'Admin access required'
+			});
+		}
+		const amount = Math.round(Number(req.body.amount || 0) * 100) / 100;
+		if (amount <= 0 || isNaN(amount)) {
+			return res.status(400).json({
+				success: false,
+				error: 'Valid amount greater than 0 is required'
+			});
+		}
+		const reason = req.body.reason ? String(req.body.reason).trim() : `Admin Mass Credit (₹${amount})`;
+		const result = await WalletRepo.bulkCreditAllUsers(amount, reason);
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({
+			success: false,
+			error: err.message
+		});
+	}
+});
 router.post('/wallet/recharge/init', async (req, res) => {
 	try {
 		const tgUserId = getTgUserId(req);
@@ -2399,9 +2475,16 @@ router.get('/upi-launch', (req, res) => {
 		return res.status(400).send('Invalid UPI URI');
 	}
 	const queryPart = rawUri.replace(/^upi:\/\/pay\??/i, '');
-	const gpayUri = `tez://upi/pay?${queryPart}`;
-	const phonepeUri = `phonepe://pay?${queryPart}`;
-	const paytmUri = `paytmmp://pay?${queryPart}`;
+	const ua = String(req.headers['user-agent'] || '');
+	const isAndroid = /android/i.test(ua);
+	const makeAppHref = (pkg, iosScheme) => isAndroid
+		? `intent://pay?${queryPart}#Intent;scheme=upi;${pkg ? `package=${pkg};` : ''}end`
+		: `${iosScheme}?${queryPart}`;
+	const defaultHref = makeAppHref('', 'upi://pay');
+	const gpayUri = makeAppHref('com.google.android.apps.nbu.paisa.user', 'tez://upi/pay');
+	const phonepeUri = makeAppHref('com.phonepe.app', 'phonepe://pay');
+	const paytmUri = makeAppHref('net.one97.paytm', 'paytmmp://pay');
+	const bhimUri = makeAppHref('in.org.npci.upiapp', 'bhim://upi/pay');
 	const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=210x210&margin=8&data=${encodeURIComponent(rawUri)}`;
 	res.setHeader('Content-Type', 'text/html; charset=utf-8');
 	res.send(`<!DOCTYPE html>
@@ -2423,7 +2506,8 @@ router.get('/upi-launch', (req, res) => {
     .btn-gpay { background:#2563eb; }
     .btn-pe { background:#5f259f; }
     .btn-ptm { background:#00baf2; color:#0f172a; }
-    .btn-copy { background:#334155; }
+    .btn-bhim { background:#ea580c; }
+    .btn-copy { background:#334155; width:100%; box-sizing:border-box; }
     .note { margin-top:12px; font-size:12px; color:#94a3b8; }
   </style>
 </head>
@@ -2432,14 +2516,15 @@ router.get('/upi-launch', (req, res) => {
     <h2>Complete UPI Payment</h2>
     <p>Choose your UPI app or scan QR. After paying, return to Telegram Mini App.</p>
     <div class="qr"><img src="${qrUrl}" alt="UPI QR" /></div>
-    <a class="btn btn-upi" href=${JSON.stringify(rawUri)}>🚀 Open Default UPI App</a>
+    <a class="btn btn-upi" href=${JSON.stringify(defaultHref)}>🚀 Open Any UPI App</a>
     <div class="grid">
+      <a class="btn btn-bhim" href=${JSON.stringify(bhimUri)}>BHIM UPI</a>
       <a class="btn btn-gpay" href=${JSON.stringify(gpayUri)}>Google Pay</a>
       <a class="btn btn-pe" href=${JSON.stringify(phonepeUri)}>PhonePe</a>
       <a class="btn btn-ptm" href=${JSON.stringify(paytmUri)}>Paytm</a>
-      <button class="btn btn-copy" onclick="copyUri()">📋 Copy Link</button>
     </div>
-    <div class="note" id="msg">Opening UPI app automatically...</div>
+    <button class="btn btn-copy" onclick="copyUri()">📋 Copy UPI Link</button>
+    <div class="note" id="msg">Tap any UPI app above or scan QR to pay.</div>
   </div>
   <script>
     const upiUri = ${JSON.stringify(rawUri)};
@@ -2448,7 +2533,6 @@ router.get('/upi-launch', (req, res) => {
         document.getElementById('msg').textContent = '✅ UPI link copied!';
       });
     }
-    setTimeout(() => { window.location.href = upiUri; }, 250);
   </script>
 </body>
 </html>`);
