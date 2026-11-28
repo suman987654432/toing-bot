@@ -1442,7 +1442,12 @@ router.post('/cart/update', async (req, res) => {
 				bhimStatus = 'need_99';
 			}
 		}
-		const itemSubtotal = Number(d.cart_subtotal ?? d.item_total ?? (Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0));
+		const reqItemsSubtotal = Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0;
+		const rawSwiggySubtotal = Number(d.cart_subtotal ?? d.item_total ?? reqItemsSubtotal);
+		const referralCash = extractReferralCash(d);
+		const itemSubtotal = (referralCash > 0 && reqItemsSubtotal > rawSwiggySubtotal && Math.abs((reqItemsSubtotal - referralCash) - rawSwiggySubtotal) <= 2)
+			? reqItemsSubtotal
+			: rawSwiggySubtotal;
 		// Check if Swiggy genuinely unlocks Free Delivery for this restaurant/location:
 		// 1. Swiggy appliedTradeCampaignHeaders has FREE_DELIVERY
 		// 2. Swiggy fullCouponLessFreeDeliveryApplied is true
@@ -1464,7 +1469,6 @@ router.post('/cart/update', async (req, res) => {
 		const isBhimApplied = bhimStatus === 'applied' || String(d.coupon_applied || '').toUpperCase() === 'BHIMNEW';
 		const bhimExtraDeduct = (isBhimApplied && rawCouponDiscount === 0) ? 50 : 0;
 		const couponDiscount = rawCouponDiscount > 0 ? rawCouponDiscount : bhimExtraDeduct;
-		const referralCash = extractReferralCash(d);
 		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount - referralCash));
 		const baseOrderTotal = (isFreeDelivery && rawDeliveryFee > 0) ? calcOrderTotal : Math.max(0, Math.round(Number(d.order_total ?? calcOrderTotal) - bhimExtraDeduct));
 		const bill = result.success && (d.order_total !== undefined || d.delivery_charges !== undefined) ? {
