@@ -1643,9 +1643,17 @@ router.get('/orders', async (req, res) => {
 		}
 		// Combine confirmed session orders with live orders (skip unpaid PAYMENT_PENDING and >2hr expired orders)
 		const cutoff = Date.now() - TWO_HOURS_MS;
+		const curYear = new Date().getFullYear();
 		const freshLiveOrders = liveOrdersList.filter((o) => {
 			if (!o.order_time || o.order_time === 'Just now') return true;
-			const ts = Date.parse(String(o.order_time).replace(' ', 'T') + (String(o.order_time).includes('Z') || String(o.order_time).includes('+') ? '' : '+05:30'));
+			let rawTime = String(o.order_time).trim();
+			// Swiggy returns "November 28, 6:02 PM" without a year — V8 Date.parse defaults missing year to 2001!
+			if (!/\b\d{4}\b/.test(rawTime)) {
+				rawTime = rawTime.replace(/,\s*/, `, ${curYear} `) + ' GMT+0530';
+			} else {
+				rawTime = rawTime.replace(' ', 'T') + (rawTime.includes('Z') || rawTime.includes('+') ? '' : '+05:30');
+			}
+			const ts = Date.parse(rawTime);
 			return isNaN(ts) || ts > cutoff;
 		});
 		const userOrders = getUserPlacedOrders(tgUserId).filter((o) => o.order_status !== 'PAYMENT_PENDING');
