@@ -1983,7 +1983,16 @@ router.post('/orders/confirm', async (req, res) => {
 				await WalletRepo.deductOrderFee(tgUserId, cfg.orderFee, String(orderId));
 			}
 			const ord = getUserPlacedOrders(tgUserId).find((o) => String(o.order_id) === String(orderId));
-			if (ord) ord.order_status = 'CONFIRMED';
+			if (ord) {
+				ord.order_status = 'CONFIRMED';
+				const confirmOfoToken = result.data?.data?.order_data?.user_flow_info?.flow_data?.message_id
+					|| result.data?.data?.user_flow_info?.flow_data?.message_id;
+				if (confirmOfoToken) {
+					ord.ofo_token = confirmOfoToken;
+					ord.ofo_tracking_url = `https://www.swiggy.com/toing/ofo/track/${confirmOfoToken}`;
+					ord.tracking_url = ord.ofo_tracking_url;
+				}
+			}
 			sendOrderPlacedTelegram(tgUserId, orderId, active, ord || null, false);
 		}
 		res.json(result);
