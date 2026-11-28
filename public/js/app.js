@@ -2787,17 +2787,24 @@ async function openOrderDetails(orderId) {
 			|| data.ofo_tracking_url
 			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : '')
 			|| `https://www.swiggy.com/track-order/${orderId}`;
-		// Extract full Bill Details
+		// Extract full Bill Details (prefer official Swiggy rendering_details first)
 		const charges = ord.charges || {};
-		const itemsSum = Math.round(items.reduce((s, it) => s + Number(it.sub_total || it.final_price || it.item_total || (it.cost ? it.cost / 100 : 0)), 0) * 100) / 100;
-		const itemTotal = itemsSum > 0 ? itemsSum : Number(ord.item_total || total);
+		const rd = Array.isArray(ord.rendering_details) ? ord.rendering_details : [];
+		const rdVal = (k) => {
+			const row = rd.find((r) => r.key === k);
+			if (!row) return 0;
+			const n = Number(String(row.value || '').replace(/[^\d.-]/g, ''));
+			return isNaN(n) ? 0 : Math.abs(n);
+		};
+		const itemsTotalSum = Math.round(items.reduce((s, it) => s + Number(it.total || it.base_price || it.sub_total || it.final_price || (it.cost ? it.cost / 100 : 0)), 0) * 100) / 100;
+		const itemTotal = rdVal('item_total') || (itemsTotalSum > 0 ? itemsTotalSum : Number(ord.item_total || total));
 		const deliveryFee = Number(ord.delivery_charges ?? charges['Total Delivery Fees'] ?? charges['Delivery Charges'] ?? 0);
 		const packingFee = Number(charges['Packing Charges'] || 0) + Number(charges['Convenience Fee'] || 0) + Number(charges['Service Charges'] || 0);
-		const taxes = Math.round((Number(ord.order_tax ?? charges['GST'] ?? 0) + packingFee) * 100) / 100;
-		const couponDisc = Number(ord.coupon_discount || 0);
-		const actualDiff = Math.max(0, Math.round((itemTotal + deliveryFee + taxes - couponDisc - total) * 100) / 100);
-		const freeCashDisc = actualDiff > 0.5 ? Math.round(actualDiff * 100) / 100 : 0;
-		const finalCouponDisc = couponDisc > 0 ? couponDisc : 0;
+		const taxes = rdVal('taxes') || Math.round((Number(ord.order_tax ?? charges['GST'] ?? 0) + packingFee) * 100) / 100;
+		const finalCouponDisc = Number(ord.coupon_discount || rdVal('discount_applied') || 0);
+		const rdFc = rdVal('extra_discount') || rdVal('offerCashReward');
+		const actualDiff = Math.max(0, Math.round((itemTotal + deliveryFee + taxes - finalCouponDisc - total) * 100) / 100);
+		const freeCashDisc = rdFc > 0 ? rdFc : (actualDiff > 0.5 ? actualDiff : 0);
 		const rawPm = String(ord.payment_method || ord.payment_method_involved || cached?.payment_method || 'UPI');
 		const payLabel = /cash|cod/i.test(rawPm) ? 'COD' : (/upi/i.test(rawPm) ? 'UPI' : rawPm.toUpperCase());
 		// Delivery Address & Receiver Contact
