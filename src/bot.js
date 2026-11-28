@@ -244,15 +244,8 @@ const initBot = (webAppUrl) => {
 				}
 				const liveBase = getLiveWebAppUrl();
 				const trackMiniAppUrl = `${liveBase}${liveBase.includes('?') ? '&' : '?'}track=${encodeURIComponent(orderId)}`;
-				const rawOfoToken = ord?.ofo_token
-					|| ord?.user_flow_info?.flow_data?.message_id
-					|| ord?.message_id;
-				const isToken = rawOfoToken && !/^\d{14,18}$/.test(String(rawOfoToken).trim());
-				const ofoToken = isToken ? String(rawOfoToken).trim() : null;
-				const toingTrackUrl = (ord?.ofo_tracking_url && !/\/toing\/ofo\/track\/\d{14,18}/.test(ord.ofo_tracking_url))
-					? ord.ofo_tracking_url
-					: (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`);
-				const trackBtnText = ofoToken ? '🌐 Toing Tracking Link' : '🌐 Swiggy Tracking Link';
+				const ofoToken = ord?.ofo_token || ord?.user_flow_info?.flow_data?.message_id || ord?.message_id || '';
+				const toingTrackUrl = `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
 				const keyboard = [
 					[{
 						text: '🔄 Refresh Status',
@@ -266,7 +259,7 @@ const initBot = (webAppUrl) => {
 						style: 'success'
 					}],
 					[{
-						text: trackBtnText,
+						text: '🌐 Toing Tracking Link',
 						url: toingTrackUrl
 					}],
 					[{
@@ -990,7 +983,6 @@ const initBot = (webAppUrl) => {
 			const uid = String(msg.from?.id || ctx.from?.id || '');
 			const chatId = String(msg.chat?.id || uid);
 			if (text.startsWith('/')) return;
-
 			const admPending = isAdminUser(uid) ? adminPending.get(uid) : null;
 			if (admPending && admPending.action === 'await_broadcast' && msg.message_id) {
 				adminPending.delete(uid);
@@ -1042,17 +1034,25 @@ const initBot = (webAppUrl) => {
 							text: `✅ *BROADCAST COMPLETE!*\n\n• *Total Users:* ${ids.length}\n• *Sent:* ${sent}\n• *Failed / Blocked:* ${failed}`,
 							parse_mode: 'Markdown',
 							reply_markup: {
-								inline_keyboard: [[{ text: '🔙 Admin Panel', callback_data: 'adm_home', style: 'primary' }]]
+								inline_keyboard: [
+									[{
+										text: '🔙 Admin Panel',
+										callback_data: 'adm_home',
+										style: 'primary'
+									}]
+								]
 							}
 						});
 					} catch (err) {
 						console.error('[Telegram Bot Broadcast Error]:', err.message);
-						await tgApi('sendMessage', { chat_id: chatId, text: '❌ Broadcast failed: ' + err.message }).catch(() => {});
+						await tgApi('sendMessage', {
+							chat_id: chatId,
+							text: '❌ Broadcast failed: ' + err.message
+						}).catch(() => {});
 					}
 				})();
 				return;
 			}
-
 			if (!text) return;
 			const wPending = walletPending.get(uid);
 			if (wPending && wPending.step === 'await_amount') {

@@ -1,9 +1,17 @@
 const https = require('https');
-const swiggyKeepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 25, maxFreeSockets: 10, timeout: 60000 });
-const axios = require('axios').create({ httpsAgent: swiggyKeepAliveAgent });
-const { AsyncLocalStorage } = require('async_hooks');
+const swiggyKeepAliveAgent = new https.Agent({
+	keepAlive: true,
+	maxSockets: 25,
+	maxFreeSockets: 10,
+	timeout: 60000
+});
+const axios = require('axios').create({
+	httpsAgent: swiggyKeepAliveAgent
+});
+const {
+	AsyncLocalStorage
+} = require('async_hooks');
 const sessionCtx = new AsyncLocalStorage();
-
 const decodeTidClaims = (tid = '') => {
 	try {
 		const parts = String(tid || '').split('.');
@@ -15,7 +23,10 @@ const decodeTidClaims = (tid = '') => {
 			};
 		}
 	} catch (e) {}
-	return { sid: '', userId: '' };
+	return {
+		sid: '',
+		userId: ''
+	};
 };
 // Default authentic Swiggy Android / Toing App headers reverse-engineered directly from HAR files
 const DEFAULT_DISC_HEADERS = {
@@ -119,14 +130,18 @@ const buildPaymentHeaders = (tid = '', token = '', userId = '', extra = {}) => {
 };
 const SwiggyService = {
 	runWithSession(ctx = {}, fn) {
-		return sessionCtx.run({ ...(ctx || {}) }, fn);
+		return sessionCtx.run({
+			...(ctx || {})
+		}, fn);
 	},
 	setSessionContext(ctx = {}) {
 		const store = sessionCtx.getStore();
 		if (store && typeof store === 'object') {
 			Object.assign(store, ctx || {});
 		} else {
-			sessionCtx.enterWith({ ...(ctx || {}) });
+			sessionCtx.enterWith({
+				...(ctx || {})
+			});
 		}
 	},
 	/* ==========================================================
@@ -264,7 +279,9 @@ const SwiggyService = {
 				timeout: 8000,
 			});
 			const item = response.data?.data?.[0];
-			if (!item) return { success: false };
+			if (!item) return {
+				success: false
+			};
 			const comps = Array.isArray(item.address_components) ? item.address_components : [];
 			const getComp = (...types) => comps.find((c) => Array.isArray(c.types) && types.some((t) => c.types.includes(t)))?.long_name || '';
 			const sublocality = getComp('sublocality', 'sublocality_level_1', 'neighborhood', 'nearby');
@@ -278,14 +295,19 @@ const SwiggyService = {
 				display: item.formatted_address || area || '',
 			};
 		} catch (error) {
-			return { success: false, error: error.message };
+			return {
+				success: false,
+				error: error.message
+			};
 		}
 	},
 	// Autocomplete Area / Colony via Swiggy Maps (Google-backed, All-India accurate)
 	async placeAutocomplete(input, lat = null, lng = null, tid = '', token = '') {
 		const url = `https://maps.swiggy.com/place/autocomplete?input=${encodeURIComponent(input)}`;
 		try {
-			const extraHeaders = { accept: 'application/json' };
+			const extraHeaders = {
+				accept: 'application/json'
+			};
 			if (lat && lng) {
 				extraHeaders.latitude = String(lat);
 				extraHeaders.longitude = String(lng);
@@ -295,47 +317,59 @@ const SwiggyService = {
 				timeout: 6000,
 			});
 			const list = Array.isArray(response.data?.data) ? response.data.data.slice(0, 5) : [];
-			const resolved = await Promise.all(
-				list.map(async (item) => {
-					const desc = item.description || '';
-					const main = item.structured_formatting?.main_text || desc.split(',')[0] || input;
-					const sec = item.structured_formatting?.secondary_text || '';
-					let sLat = null, sLng = null, sCity = '';
-					if (item.place_id) {
-						try {
-							const r2 = await axios.get(`https://maps.swiggy.com/address/recommend?place_id=${encodeURIComponent(item.place_id)}&enrich_poi_components=true`, {
-								headers: buildDiscHeaders(tid, token, { accept: 'application/json' }),
-								timeout: 5000,
-							});
-							const d0 = r2.data?.data?.[0];
-							if (d0?.geometry?.location) {
-								sLat = parseFloat(d0.geometry.location.lat);
-								sLng = parseFloat(d0.geometry.location.lng);
-							}
-							const comps = Array.isArray(d0?.address_components) ? d0.address_components : [];
-							sCity = comps.find((c) => Array.isArray(c.types) && (c.types.includes('city') || c.types.includes('locality')))?.long_name || '';
-						} catch (e) {}
-					}
-					if (!sLat || !sLng) return null;
-					return {
-						title: main,
-						area: main,
-						city: sCity || sec.split(',').slice(-3, -2)[0]?.trim() || '',
-						display: sec || desc || main,
-						lat: sLat,
-						lng: sLng,
-					};
-				})
-			);
-			return { success: true, suggestions: resolved.filter(Boolean) };
+			const resolved = await Promise.all(list.map(async (item) => {
+				const desc = item.description || '';
+				const main = item.structured_formatting?.main_text || desc.split(',')[0] || input;
+				const sec = item.structured_formatting?.secondary_text || '';
+				let sLat = null,
+					sLng = null,
+					sCity = '';
+				if (item.place_id) {
+					try {
+						const r2 = await axios.get(`https://maps.swiggy.com/address/recommend?place_id=${encodeURIComponent(item.place_id)}&enrich_poi_components=true`, {
+							headers: buildDiscHeaders(tid, token, {
+								accept: 'application/json'
+							}),
+							timeout: 5000,
+						});
+						const d0 = r2.data?.data?.[0];
+						if (d0?.geometry?.location) {
+							sLat = parseFloat(d0.geometry.location.lat);
+							sLng = parseFloat(d0.geometry.location.lng);
+						}
+						const comps = Array.isArray(d0?.address_components) ? d0.address_components : [];
+						sCity = comps.find((c) => Array.isArray(c.types) && (c.types.includes('city') || c.types.includes('locality')))?.long_name || '';
+					} catch (e) {}
+				}
+				if (!sLat || !sLng) return null;
+				return {
+					title: main,
+					area: main,
+					city: sCity || sec.split(',').slice(-3, -2)[0]?.trim() || '',
+					display: sec || desc || main,
+					lat: sLat,
+					lng: sLng,
+				};
+			}));
+			return {
+				success: true,
+				suggestions: resolved.filter(Boolean)
+			};
 		} catch (error) {
-			return { success: false, suggestions: [], error: error.message };
+			return {
+				success: false,
+				suggestions: [],
+				error: error.message
+			};
 		}
 	},
 	// Resolve Swiggy Share Address Link via mapi/social/getAddress (from swiggy_address.har)
 	async resolveShareAddress(shareId, userId = '', refererUrl = '', tid = '', token = '') {
 		const cleanId = String(shareId || '').trim().split(/[?#]/)[0];
-		if (!cleanId) return { success: false, error: 'Missing share ID' };
+		if (!cleanId) return {
+			success: false,
+			error: 'Missing share ID'
+		};
 		const url = `https://www.swiggy.com/mapi/social/getAddress/${encodeURIComponent(cleanId)}`;
 		const swiggyWebCookie = process.env.SWIGGY_WEB_COOKIE || 'is_app=1; platform=Swiggy-Android; a_platform=an; __SW=QjDG5DVcjuTpNNnT_oiinYR8pA_bqmbD; _is_logged_in=1; _session_tid=587798ad1dbd8962426859e3281438db3d003a78ad5b47c07cb155cc4fbbe953f538784b2d9730523d3fa7c2f5e324fa262224e9b21cf3d11babb23627ac9f3121a83f4b62b0f1ff09f1221157f701b5b6253bf29de6f6f463107decdf968fc7a8fa60f48ce85121344f0ab5bedbb9ba44ebe72b481c3dff02769284e83d03481ff0f54dab6a79966d5f527ecf4905767428a45a650076e041a64bb7f20e7776cd8a5f9c4a9b445b323e7586b406aa1b2c14719b7e8842f6e43d627742aa0d284797477f777416bd29f22169001a3ce96281bf607e3663d0a0849575093a822c3b773275d4dd62661d812dbd5d87edff0da38eedc545a60b7977b1b1bddf24a4e79a8d9401a69a19667ae6bd9319c41c72989183bd22ca5012f19fdfdc54a422ef12c018e74b50ebfedf50a99ca558e62e045f2c74d57370e7ea2160a99e52d92d2bde2788f56dc02a88fe00e57e81385c193556fe489c401da44d14fea1b97f961f21b431367195faeb9872834141c79528cd2d5e1d2baf6126705e21a3f66027d01fafc19dac0e1e40e3bc2dd0a19a1e487672198ecc77409d26bd2b5ae1240ab86ca74140d3c1086430b2b23d73da8189df6150b42c9350bc4e0dc6283be0b5b8c88e82ba01c72d476fa6e2321b13aaa4154e094cfb2c32d6fb574215d470db80636f5d7a1ec373c748f20e55fcc88659b8528ba806796a72cc89a14c13608e3ac761020827e377cae270edaa939ccaf385a05fc359a93f252d0ca763f23e53d60319e6f8bff2226ece16c483e470a38533abe537ec29f9ab98ab4812674afe4920eae2fc5d7780ade884398d0468c95edccfb1855234abe5a6b7270b79a5a4a9173491345eb7648719a8d432a80fbd4b7118098ccd9432cf9fbcbd6e4d8cc009d477b77afbadfe187c32608224fe3a54da6516bc5c66fa875e0f9bb7a812fddf524e6893fcbae26293909a8fee558173a8bdc01b2d49465cea5dd9dcf54b5471c361bef1dc66980570052eb8806ba719ca1d9f978fb3e0a145bf8d23c8b337f9d7c2d95917dd928efa29109da6ad0fdaa34459415a84fa324df08bfcbf2f8fa32f15dd1bdac22faf41eef84544877b308ff143f2aa0566ca166881adf01abf1f5f675774f856da460fda37d3f28e555c92cf0862929c4e83a82771a6848bf1b855b6b3765c19d741dec104a31d03e5abc831696415fdedabef69a015a19c54fb9fbaf4ce5c69f57467688ed591dd33c092aa7742de7a8c6df69b544523e5; tid=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsIktJRCI6IjIifQ.eyJzZXNzaW9uX2RhdGEiOiJuTkk4dEZaWkdKL0JSVjBrT0tpaGlkYzUrU1NUMU9kSWFtZEo1eGlYV3FxNlIvVm1BSyszNVB3R01SdEtyZ1N4ZlBaS0xIVWRicjRTWlFuS1U0b0NjWEZlSG1kaGM1NTdrbFA4a3RDd0VRRTBHL2QxU0hiNUp0dmM1ZGcrc1NkTlpqSURmUHhrYTNyamc4VnBrLzVUaWFWYWtRMWNWQngzaTlqdDYrU2FkWjRFdTliZ1ZIWUdGVTdzVUNOWS9GbkZxMThpV3JkSzN2TlpFaUtWbnhTb0t0Z2lMN3N6ZzVsMStCQTU2TGczUFo1aGM3aUpMcUlSOXlMMlhGTVdJSVpFTmNZbDBPUkhpMkNpS2RVVVNHNjdHMXQrWVhwcVpDZkFzRHRNN20xVk41S2JpZVlKYUpoN29uc1U2djNCRWNUanRyNGxnVm9sUEwrcmNYWnFPakE2SWNPcEtuQ1RNVmg5RTZwb21sMD0iLCJleHAiOjE3OTU2MzA1NzcsInNpZCI6InVlbmQ4YWQ1YWFlLTRiZjMtNDNhZC1iNzNlLWJhYzE4Y2I5MyIsImlhdCI6MTc5MzAzODU3NywiaXNzIjoiaGFwIiwidXNlcl9pZCI6IjI0MDU2NjI2MiIsInN1YiI6ImUyMWZmNzk5LWY2MzEtNGZiMS05OTJhLTk3M2JiNTA3YjlkNiJ9.wZ0V6DGyNOGfoQFR8zxjaAnmTa2l4VyCdzfpBnLArys; token=2be7ebfb-d0b4-4c36-b9cb-54d6dd3820ced9b21a91-e736-4196-80b8-7bb135aa67f5; _device_id=224f98f617ba29a5; _swuid=224f98f617ba29a5; _cid=MjQwNTY2MjYy; _sid=uend8ad5aae-4bf3-43ad-b73e-bac18cb93';
 		try {
@@ -358,7 +392,10 @@ const SwiggyService = {
 			const lat = parseFloat(act?.location?.lat ?? act?.location?.latitude);
 			const lng = parseFloat(act?.location?.lng ?? act?.location?.longitude);
 			if (!act || !lat || !lng) {
-				return { success: false, error: response.data?.statusMessage || 'Address not found in share link' };
+				return {
+					success: false,
+					error: response.data?.statusMessage || 'Address not found in share link'
+				};
 			}
 			return {
 				success: true,
@@ -376,7 +413,10 @@ const SwiggyService = {
 				},
 			};
 		} catch (error) {
-			return { success: false, error: error.response?.data?.statusMessage || error.message };
+			return {
+				success: false,
+				error: error.response?.data?.statusMessage || error.message
+			};
 		}
 	},
 	// Fetch All Saved Addresses (from maps.swiggy.com)
@@ -390,15 +430,16 @@ const SwiggyService = {
 				responseType: 'arraybuffer',
 				timeout: 10000,
 			});
-
 			const buf = Buffer.from(response.data || []);
 			// Check if response is JSON
 			try {
 				const json = JSON.parse(buf.toString('utf8'));
 				const list = json.addresses || json.data?.addresses || json;
-				if (Array.isArray(list)) return { success: true, addresses: list };
+				if (Array.isArray(list)) return {
+					success: true,
+					addresses: list
+				};
 			} catch (e) {}
-
 			// Decode Protobuf
 			const addresses = [];
 			let i = 0;
@@ -407,7 +448,8 @@ const SwiggyService = {
 				const fn = byte >> 3;
 				const wt = byte & 0x07;
 				if (wt === 2) {
-					let len = 0, shift = 0;
+					let len = 0,
+						shift = 0;
 					while (i < buf.length) {
 						const b = buf[i++];
 						len |= (b & 0x7f) << shift;
@@ -427,13 +469,13 @@ const SwiggyService = {
 						let lng = 85.1587;
 						let contactName = '';
 						let contactPhone = '';
-
 						while (j < val.length) {
 							const b2 = val[j++];
 							const fn2 = b2 >> 3;
 							const wt2 = b2 & 0x07;
 							if (wt2 === 2) {
-								let l2 = 0, s2 = 0;
+								let l2 = 0,
+									s2 = 0;
 								while (j < val.length) {
 									const b_ = val[j++];
 									l2 |= (b_ & 0x7f) << s2;
@@ -449,7 +491,8 @@ const SwiggyService = {
 										const fn3 = b3 >> 3;
 										const wt3 = b3 & 0x07;
 										if (wt3 === 2) {
-											let l3 = 0, s3 = 0;
+											let l3 = 0,
+												s3 = 0;
 											while (k < v2.length) {
 												const b_ = v2[k++];
 												l3 |= (b_ & 0x7f) << s3;
@@ -474,21 +517,27 @@ const SwiggyService = {
 														m += 8;
 													}
 												}
-											}
-											else if (fn3 === 20) contactName = v3.toString('utf8');
+											} else if (fn3 === 20) contactName = v3.toString('utf8');
 											else if (fn3 === 22) contactPhone = v3.toString('utf8');
 											k += l3;
-										} else if (wt3 === 0) { while (v2[k++] & 0x80) {} }
-										else if (wt3 === 1) { k += 8; }
-										else if (wt3 === 5) { k += 4; }
+										} else if (wt3 === 0) {
+											while (v2[k++] & 0x80) {}
+										} else if (wt3 === 1) {
+											k += 8;
+										} else if (wt3 === 5) {
+											k += 4;
+										}
 									}
 								}
 								j += l2;
-							} else if (wt2 === 0) { while (val[j++] & 0x80) {} }
-							else if (wt2 === 1) { j += 8; }
-							else if (wt2 === 5) { j += 4; }
+							} else if (wt2 === 0) {
+								while (val[j++] & 0x80) {}
+							} else if (wt2 === 1) {
+								j += 8;
+							} else if (wt2 === 5) {
+								j += 4;
+							}
 						}
-
 						if (addrId) {
 							addresses.push({
 								id: addrId,
@@ -505,17 +554,23 @@ const SwiggyService = {
 									address_line: addrLine1,
 									contact_name: contactName,
 									phone: contactPhone,
-									location: { lat, lng }
+									location: {
+										lat,
+										lng
+									}
 								}
 							});
 						}
 					}
 					i += len;
-				} else if (wt === 0) { while (buf[i++] & 0x80) {} }
-				else if (wt === 1) { i += 8; }
-				else if (wt === 5) { i += 4; }
+				} else if (wt === 0) {
+					while (buf[i++] & 0x80) {}
+				} else if (wt === 1) {
+					i += 8;
+				} else if (wt === 5) {
+					i += 4;
+				}
 			}
-
 			return {
 				success: true,
 				addresses,
@@ -1120,7 +1175,6 @@ const SwiggyService = {
 			const lat = cartData?.cartLatLong?.lat;
 			const lng = cartData?.cartLatLong?.lng;
 			const addressId = cartData?.address_id;
-
 			const extraHeaders = {};
 			if (lat) {
 				extraHeaders['lat'] = String(lat);
@@ -1134,7 +1188,6 @@ const SwiggyService = {
 				extraHeaders['addressid'] = String(addressId);
 				extraHeaders['cartaddressid'] = String(addressId);
 			}
-
 			const response = await axios.post(url, cartData, {
 				headers: buildPaymentHeaders(tid, token, userId, extraHeaders),
 				timeout: 12000,
@@ -1377,15 +1430,8 @@ const SwiggyService = {
 			const paasId = String(od.payment_txn_id || od.payment_info_v2?.payment_transactions?.[0]?.marketplace_reference_id || od.targeted_marketplace_payment_reference_id || '');
 			const rawStr = JSON.stringify(d);
 			const upiMatch = rawStr.match(/upi:\/\/pay\?[^"\\]+/);
-			const rawOfoToken = od.user_flow_info?.flow_data?.message_id
-				|| d.data?.user_flow_info?.flow_data?.message_id
-				|| od.message_id
-				|| '';
-			const isToken = rawOfoToken && !/^\d{14,18}$/.test(String(rawOfoToken).trim());
-			const ofoToken = isToken ? String(rawOfoToken).trim() : '';
-			const ofoTrackingUrl = ofoToken
-				? `https://www.swiggy.com/toing/ofo/track/${ofoToken}`
-				: `https://www.swiggy.com/track-order/${orderId}`;
+			const ofoToken = od.user_flow_info?.flow_data?.message_id || d.data?.user_flow_info?.flow_data?.message_id || od.message_id || '';
+			const ofoTrackingUrl = `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
 			return {
 				success: d.statusCode === 0 && Boolean(orderId),
 				statusCode: d.statusCode,
@@ -1641,7 +1687,10 @@ const SwiggyService = {
 			const rawStr = buf.toString('utf8');
 			// If JSON response
 			if (rawStr.trim().startsWith('{')) {
-				return { success: true, data: JSON.parse(rawStr) };
+				return {
+					success: true,
+					data: JSON.parse(rawStr)
+				};
 			}
 			const clean = rawStr.replace(/[^\x20-\x7E\n]/g, ' ').replace(/\s+/g, ' ');
 			// Extract Delivery Partner phone (cta-call-de)
