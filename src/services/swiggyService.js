@@ -775,9 +775,12 @@ const SwiggyService = {
 	// Helper: Parse live protobuf addon/variation groups dynamically from binary buffer
 	parseAddonGroups(dishBuf) {
 		const groups = [];
+		const seenGroupIds = new Set();
 		let p = 0;
 		while (p < dishBuf.length - 4) {
-			if (dishBuf[p] === 0x52) {
+			const outerTag = dishBuf[p];
+			if (outerTag === 0x52 || outerTag === 0x72) {
+				const isAddonGroup = outerTag === 0x72;
 				p++;
 				let len = 0,
 					shift = 0;
@@ -788,7 +791,7 @@ const SwiggyService = {
 					shift += 7;
 				}
 				const groupEnd = p + len;
-				if (groupEnd <= dishBuf.length) {
+				if (len > 4 && groupEnd <= dishBuf.length) {
 					const groupBuf = dishBuf.slice(p, groupEnd);
 					let gp = 0;
 					if (groupBuf[0] === 0x12) gp = 2;
@@ -808,10 +811,11 @@ const SwiggyService = {
 								if (!(b & 0x80)) break;
 								sShift += 7;
 							}
+							if (gp + sLen > groupBuf.length) break;
 							if (fieldNum === 1 && !groupId) {
-								groupId = groupBuf.slice(gp, gp + sLen).toString('utf8');
+								groupId = groupBuf.slice(gp, gp + sLen).toString('utf8').trim();
 							} else if (fieldNum === 2 && !groupName) {
-								groupName = groupBuf.slice(gp, gp + sLen).toString('utf8');
+								groupName = groupBuf.slice(gp, gp + sLen).toString('utf8').trim();
 							} else if (fieldNum === 3) {
 								const choiceBuf = groupBuf.slice(gp, gp + sLen);
 								let cp = 0,
@@ -831,15 +835,22 @@ const SwiggyService = {
 											if (!(b & 0x80)) break;
 											cShift += 7;
 										}
-										if (cField === 1 && !choiceName) {
-											choiceName = choiceBuf.slice(cp, cp + cLen).toString('utf8');
-										} else if (cField === 4 && !choiceId) {
-											choiceId = choiceBuf.slice(cp, cp + cLen).toString('utf8');
+										if (cp + cLen > choiceBuf.length) break;
+										const valStr = choiceBuf.slice(cp, cp + cLen).toString('utf8').trim();
+										if (isAddonGroup) {
+											if (cField === 1 && !choiceId && /^\d+$/.test(valStr)) choiceId = valStr;
+											else if (cField === 2 && !choiceName) choiceName = valStr;
+											else if (cField === 4 && !choiceId) choiceId = valStr;
+										} else {
+											if (cField === 1 && !choiceName) choiceName = valStr;
+											else if (cField === 4 && !choiceId) choiceId = valStr;
 										}
 										cp += cLen;
 									} else if (cWire === 5) {
-										const f = choiceBuf.readFloatLE(cp);
-										if (f > 0 && f < 500000) choicePrice = Math.round((f / 100) * 100) / 100;
+										if (cp + 4 <= choiceBuf.length) {
+											const f = choiceBuf.readFloatLE(cp);
+											if (f > 0 && f < 500000) choicePrice = Math.round((f / 100) * 100) / 100;
+										}
 										cp += 4;
 									} else if (cWire === 0) {
 										while (cp < choiceBuf.length && (choiceBuf[cp++] & 0x80)) {}
@@ -859,18 +870,31 @@ const SwiggyService = {
 							gp += sLen;
 						} else if (wire === 0) {
 							while (gp < groupBuf.length && (groupBuf[gp++] & 0x80)) {}
+						} else if (wire === 5) {
+							gp += 4;
+						} else if (wire === 1) {
+							gp += 8;
 						} else {
 							break;
 						}
 					}
-					if (groupName && choices.length > 0 && !groupName.includes('http') && !groupName.includes('.png')) {
-						groups.push({
-							id: groupId || `grp_${groups.length}`,
-							name: groupName,
-							subText: 'Optional',
-							type: choices.length > 1 ? 'radio' : 'checkbox',
-							choices
-						});
+					const cleanGroupName = groupName.replace(/['"]+$/g, '').trim();
+					const validGroupId = !isAddonGroup || /^\d{5,}$/.test(groupId);
+					if (validGroupId && cleanGroupName && choices.length > 0 && !cleanGroupName.includes('http') && !cleanGroupName.includes('.png')) {
+						const gKey = `${isAddonGroup ? 'a' : 'v'}_${groupId || cleanGroupName}`;
+						if (!seenGroupIds.has(gKey)) {
+							seenGroupIds.add(gKey);
+							const isOptionalAddon = isAddonGroup && /add-on|addon|extra|dip|beverage|best seller/i.test(cleanGroupName) && !/choose/i.test(cleanGroupName);
+							groups.push({
+								id: groupId || `grp_${groups.length}`,
+								name: cleanGroupName,
+								isAddon: isAddonGroup,
+								min: isOptionalAddon ? 0 : (choices.length > 1 ? 1 : 0),
+								subText: isOptionalAddon ? 'Optional' : (choices.length > 1 ? 'Required • Select 1' : 'Optional'),
+								type: isOptionalAddon ? 'checkbox' : (choices.length > 1 ? 'radio' : 'checkbox'),
+								choices
+							});
+						}
 					}
 					p = groupEnd;
 				}

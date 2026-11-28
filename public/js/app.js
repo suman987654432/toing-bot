@@ -1470,6 +1470,7 @@ function openCustomiseModal(item) {
               class="addon-choice-input"
               data-group-id="${grp.id}"
               data-group-name="${grp.name}"
+              data-is-addon="${grp.isAddon ? '1' : '0'}"
               data-choice-id="${ch.id}"
               data-choice-name="${ch.name}"
               data-choice-price="${ch.price}"
@@ -1542,7 +1543,7 @@ function confirmCustomiseAddToCart() {
 	checkedInputs.forEach((inp) => {
 		const extra = parseFloat(inp.dataset.choicePrice || 0);
 		total += isNaN(extra) ? 0 : extra;
-		if (inp.type === 'radio') {
+		if (inp.type === 'radio' && inp.dataset.isAddon !== '1') {
 			selectedVariants.push({
 				group_id: String(inp.dataset.groupId || ''),
 				variation_id: String(inp.dataset.choiceId || ''),
