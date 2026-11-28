@@ -205,7 +205,7 @@ function switchTab(tabName) {
 	// Trigger contextual data only if not already loaded (instant tab switching)
 	if (tabName === 'address' && state.addresses.length === 0) loadAddresses();
 	if (tabName === 'search') {
-		if (!state.selectedAddress || !state.selectedAddress.lat || !state.selectedAddress.lng) {
+		if (!state.searchLocationConfirmed || !state.selectedAddress || !state.selectedAddress.lat || !state.selectedAddress.lng) {
 			openLocationPickerModal();
 		} else if (!state.lastRestaurants || state.lastRestaurants.length === 0) {
 			performSearch();
@@ -3192,6 +3192,7 @@ function renderLocPickerSavedAddresses() {
 }
 
 async function selectLocationPickerAddress(addressId) {
+	state.searchLocationConfirmed = true;
 	closeLocationPickerModal();
 	if (typeof selectDeliveryAddress === 'function') {
 		await selectDeliveryAddress(addressId);
@@ -3208,7 +3209,7 @@ function onLocPickerSearchInput() {
 	const q = input.value.trim();
 
 	if (_locPickerSearchTimer) clearTimeout(_locPickerSearchTimer);
-	if (q.length < 2) {
+	if (q.length < 3) {
 		_locPickerSuggestions = [];
 		list.innerHTML = '';
 		list.classList.add('hidden');
@@ -3222,16 +3223,23 @@ function onLocPickerSearchInput() {
 			const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
 			_locPickerSuggestions = suggestions;
 			if (!suggestions.length) {
-				list.innerHTML = '<div style="padding:10px 12px; font-size:12px; color:var(--text-muted);">No matching areas found</div>';
+				list.innerHTML = '<div style="padding:11px 13px; font-size:12px; color:var(--text-muted);">No matching locations found</div>';
 				list.classList.remove('hidden');
 				return;
 			}
-			list.innerHTML = suggestions.map((s, idx) => `
-				<div onclick="pickLocPickerSuggestion(${idx})" style="padding:9px 12px; border-bottom:1px solid var(--border-color); cursor:pointer; font-size:12.5px;">
-					<div style="font-weight:700; color:var(--text-main);">📍 ${s.area || s.display || 'Area'}</div>
-					${s.display && s.display !== s.area ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${s.display}</div>` : ''}
-				</div>
-			`).join('');
+			list.innerHTML = suggestions.map((s, idx) => {
+				const title = s.title || s.area || 'Location';
+				const sub = s.display || s.area || '';
+				return `
+					<div onclick="pickLocPickerSuggestion(${idx})" style="display:flex; align-items:flex-start; gap:10px; padding:11px 13px; border-bottom:1px solid var(--border-color); cursor:pointer;">
+						<span style="color:#7c3aed; font-size:15px; margin-top:2px; flex-shrink:0;">📍</span>
+						<div style="flex:1; min-width:0;">
+							<div style="font-weight:700; font-size:13px; color:var(--text-main); line-height:1.3;">${title}</div>
+							${sub ? `<div style="color:var(--text-muted); font-size:11.5px; line-height:1.35; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${sub}</div>` : ''}
+						</div>
+					</div>
+				`;
+			}).join('');
 			list.classList.remove('hidden');
 		} catch (e) {
 			list.innerHTML = '<div style="padding:10px 12px; font-size:12px; color:#dc2626;">Could not fetch suggestions</div>';
@@ -3253,6 +3261,7 @@ function pickLocPickerSuggestion(idx) {
 		name: item.area || 'Selected Location',
 		flat: item.display || item.area || ''
 	};
+	state.searchLocationConfirmed = true;
 	if (typeof updateDeliveryBanner === 'function') updateDeliveryBanner();
 	closeLocationPickerModal();
 	if (state.activeTab === 'search' && typeof performSearch === 'function') {
@@ -3295,6 +3304,7 @@ function pickCurrentLocationForSearch() {
 			name: area,
 			flat: display
 		};
+		state.searchLocationConfirmed = true;
 		if (typeof updateDeliveryBanner === 'function') updateDeliveryBanner();
 		closeLocationPickerModal();
 		if (state.activeTab === 'search' && typeof performSearch === 'function') {
