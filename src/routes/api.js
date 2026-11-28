@@ -1462,7 +1462,7 @@ router.post('/cart/update', async (req, res) => {
 		const packingCharges = Number(d.total_packing_charges ?? 0);
 		const rawCouponDiscount = Number(d.coupon_discount_total ?? 0);
 		const isBhimApplied = bhimStatus === 'applied' || String(d.coupon_applied || '').toUpperCase() === 'BHIMNEW';
-		const bhimExtraDeduct = (isBhimApplied && rawCouponDiscount === 0 && itemSubtotal >= 99) ? 50 : 0;
+		const bhimExtraDeduct = (isBhimApplied && rawCouponDiscount === 0) ? 50 : 0;
 		const couponDiscount = rawCouponDiscount > 0 ? rawCouponDiscount : bhimExtraDeduct;
 		const referralCash = extractReferralCash(d);
 		const calcOrderTotal = Math.max(0, Math.round(itemSubtotal + deliveryFee + taxes + packingCharges - couponDiscount - referralCash));
