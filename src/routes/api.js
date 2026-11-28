@@ -76,15 +76,17 @@ async function sendOrderPlacedTelegram(tgUserId, orderId, activeAccount = null, 
 		const payText = /cash|cod/i.test(rawPm) ? 'ᴄᴏᴅ' : (/upi/i.test(rawPm) ? 'ᴜᴘɪ' : toSmallCaps(rawPm));
 		const rawStatus = trackData?.order_status || ord.order_status || 'Order Received!';
 		const statusText = toSmallCaps(rawStatus.replace(/_/g, ' '));
-		const ofoToken = sessionOrder?.ofo_token
+		const rawOfoToken = sessionOrder?.ofo_token
 			|| sessionOrder?.message_id
 			|| liveOrder?.user_flow_info?.flow_data?.message_id
 			|| liveOrder?.message_id
 			|| ord?.user_flow_info?.flow_data?.message_id
-			|| ord?.message_id
-			|| orderId;
-		const trackUrl = sessionOrder?.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+			|| ord?.message_id;
+		const isToken = rawOfoToken && !/^\d{14,18}$/.test(String(rawOfoToken).trim());
+		const ofoToken = isToken ? String(rawOfoToken).trim() : null;
+		const trackUrl = (sessionOrder?.ofo_tracking_url && !/\/toing\/ofo\/track\/\d{14,18}/.test(sessionOrder.ofo_tracking_url))
+			? sessionOrder.ofo_tracking_url
+			: (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`);
 		const items = ord.order_items || ord.items || sessionOrder?.items || [];
 		const itemLines = items.map((it) => {
 			const qty = it.quantity || 1;
@@ -1699,13 +1701,15 @@ router.get('/orders/:id', async (req, res) => {
 				trackData = tRes.data || null;
 			} catch (e) {}
 		}
-		const ofoToken = foundSessionOrder?.ofo_token
+		const rawOfoToken = foundSessionOrder?.ofo_token
 			|| foundSessionOrder?.message_id
 			|| liveOrder?.user_flow_info?.flow_data?.message_id
-			|| liveOrder?.message_id
-			|| req.params.id;
-		const ofoTrackingUrl = foundSessionOrder?.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+			|| liveOrder?.message_id;
+		const isToken = rawOfoToken && !/^\d{14,18}$/.test(String(rawOfoToken).trim());
+		const ofoToken = isToken ? String(rawOfoToken).trim() : null;
+		const ofoTrackingUrl = (foundSessionOrder?.ofo_tracking_url && !/\/toing\/ofo\/track\/\d{14,18}/.test(foundSessionOrder.ofo_tracking_url))
+			? foundSessionOrder.ofo_tracking_url
+			: (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${req.params.id}`);
 		res.json({
 			success: true,
 			order: foundSessionOrder || liveOrder || {
@@ -1816,12 +1820,7 @@ router.post('/orders/place', async (req, res) => {
 		const cartPayload = {
 			address_nudge_check: false,
 			batch_opt_in: false,
-			user_flow_info: {
-				flow_type: 'ofo',
-				flow_data: {
-					recipient_name: selected.name || active?.userName || 'Customer'
-				}
-			},
+			user_flow_info: {},
 			cartLatLong: {
 				lat: Number(lat),
 				lng: Number(lng)
@@ -1912,8 +1911,12 @@ router.post('/orders/place', async (req, res) => {
 		const placeOfoToken = placeRes.ofoToken
 			|| placeRes.data?.data?.order_data?.user_flow_info?.flow_data?.message_id
 			|| placeRes.data?.data?.user_flow_info?.flow_data?.message_id;
-		const finalOfoToken = placeOfoToken || updateOfoToken || placeRes.orderId;
-		const finalTrackUrl = `https://www.swiggy.com/toing/ofo/track/${finalOfoToken}`;
+		const rawToken = placeOfoToken || updateOfoToken;
+		const isToken = rawToken && !/^\d{14,18}$/.test(String(rawToken).trim());
+		const finalOfoToken = isToken ? String(rawToken).trim() : '';
+		const finalTrackUrl = finalOfoToken
+			? `https://www.swiggy.com/toing/ofo/track/${finalOfoToken}`
+			: `https://www.swiggy.com/track-order/${placeRes.orderId}`;
 		const newOrder = {
 			order_id: String(placeRes.orderId),
 			paas_id: String(placeRes.paasId || ''),
@@ -1990,9 +1993,9 @@ router.post('/orders/confirm', async (req, res) => {
 				ord.order_status = 'CONFIRMED';
 				const confirmOfoToken = result.data?.data?.order_data?.user_flow_info?.flow_data?.message_id
 					|| result.data?.data?.user_flow_info?.flow_data?.message_id;
-				if (confirmOfoToken) {
-					ord.ofo_token = confirmOfoToken;
-					ord.ofo_tracking_url = `https://www.swiggy.com/toing/ofo/track/${confirmOfoToken}`;
+				if (confirmOfoToken && !/^\d{14,18}$/.test(String(confirmOfoToken).trim())) {
+					ord.ofo_token = String(confirmOfoToken).trim();
+					ord.ofo_tracking_url = `https://www.swiggy.com/toing/ofo/track/${ord.ofo_token}`;
 					ord.tracking_url = ord.ofo_tracking_url;
 				}
 			}

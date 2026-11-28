@@ -2783,10 +2783,12 @@ async function openOrderDetails(orderId) {
 		const dpPhone = ordDp.mobile || ordDp.phone || trackDp.mobile || trackDp.phone || '';
 		const dpText = dpName ? `${dpName}${dpPhone ? ' | ' + dpPhone : ''}` : (status === 'DELIVERED' ? 'Delivered' : 'Assigning partner...');
 		// Tracking link
-		const ofoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token || orderId;
-		const trackUrl = ord.ofo_tracking_url
-			|| data.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+		const rawOfoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token;
+		const isToken = rawOfoToken && !/^\d{14,18}$/.test(String(rawOfoToken).trim());
+		const ofoToken = isToken ? String(rawOfoToken).trim() : null;
+		const trackUrl = (ord.ofo_tracking_url && !/\/toing\/ofo\/track\/\d{14,18}/.test(ord.ofo_tracking_url))
+			|| (data.ofo_tracking_url && !/\/toing\/ofo\/track\/\d{14,18}/.test(data.ofo_tracking_url))
+			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`);
 		// Extract full Bill Details (prefer official Swiggy rendering_details first)
 		const charges = ord.charges || {};
 		const rd = Array.isArray(ord.rendering_details) ? ord.rendering_details : [];
@@ -3082,10 +3084,12 @@ async function openLiveTrackModal(orderId) {
 					</div>`;
 				}).join('')}
 			</div>`;
-		const ofoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token || orderId;
-		const trackUrl = ord.ofo_tracking_url
-			|| data.ofo_tracking_url
-			|| `https://www.swiggy.com/toing/ofo/track/${ofoToken}`;
+		const rawOfoToken = ord.ofo_token || ord.message_id || track.user_flow_info?.flow_data?.message_id || data.ofo_token;
+		const isToken = rawOfoToken && !/^\d{14,18}$/.test(String(rawOfoToken).trim());
+		const ofoToken = isToken ? String(rawOfoToken).trim() : null;
+		const trackUrl = (ord.ofo_tracking_url && !/\/toing\/ofo\/track\/\d{14,18}/.test(ord.ofo_tracking_url))
+			|| (data.ofo_tracking_url && !/\/toing\/ofo\/track\/\d{14,18}/.test(data.ofo_tracking_url))
+			|| (ofoToken ? `https://www.swiggy.com/toing/ofo/track/${ofoToken}` : `https://www.swiggy.com/track-order/${orderId}`);
 		bodyEl.innerHTML = `
 			<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
 				<div>
@@ -3104,7 +3108,7 @@ async function openLiveTrackModal(orderId) {
 				</div>
 			</div>
 			<button type="button" class="btn-primary" style="width:100%;" onclick="openLiveTrackModal('${orderId}')">🔄 Refresh Live Status</button>
-			<a href="${trackUrl}" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; margin-top:8px; padding:9px; background:rgba(249,115,22,0.12); color:#ea580c; border-radius:10px; text-decoration:none; font-weight:700; font-size:12.5px;">🌐 Open Toing Tracking Page ›</a>
+			<a href="${trackUrl}" target="_blank" rel="noopener noreferrer" style="display:block; text-align:center; margin-top:8px; padding:9px; background:rgba(249,115,22,0.12); color:#ea580c; border-radius:10px; text-decoration:none; font-weight:700; font-size:12.5px;">🌐 Open ${ofoToken ? 'Toing' : 'Swiggy'} Tracking Page ›</a>
 		`;
 	} catch (e) {
 		bodyEl.innerHTML = `<div style="color:#dc2626; font-weight:700; padding:12px 0;">❌ Live tracking load nahi ho paya: ${e.message}</div>
