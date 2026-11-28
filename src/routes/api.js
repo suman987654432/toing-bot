@@ -1384,7 +1384,17 @@ router.post('/cart/update', async (req, res) => {
 			};
 		}
 		const result = await SwiggyService.updateCart(cartPayload, tid, token, userId);
-		let d = result.data?.data || {};
+		if (!result.success || !result.data?.data || (result.data?.statusCode && result.data.statusCode !== 0)) {
+			const errMsg = result.data?.statusMessage || result.data?.titleMessage || (typeof result.error === 'string' ? result.error : 'Could not update cart on Swiggy');
+			return res.json({
+				success: false,
+				error: errMsg,
+				errorCodes: result.data?.errorCodes || [],
+				data: result.data || null,
+				bill: null,
+			});
+		}
+		let d = result.data.data;
 		let autoAppliedCoupon = null;
 		let bhimStatus = '';
 		let bhimReason = '';

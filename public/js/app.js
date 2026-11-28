@@ -1824,7 +1824,8 @@ function renderCartBill(rawItemTotal) {
 			origTotalEl.style.display = 'none';
 		}
 	}
-	document.getElementById('billItemTotal').textContent = `₹${rawItemTotal.toFixed(2)}`;
+	const displayItemTotal = (live && Number(live.itemTotal) > 0) ? Number(live.itemTotal) : rawItemTotal;
+	document.getElementById('billItemTotal').textContent = `₹${displayItemTotal.toFixed(2)}`;
 	const delivLabel = document.getElementById('billDeliveryLabel');
 	if (delivLabel) {
 		delivLabel.textContent = (live && live.deliveryLabel) ? live.deliveryLabel : (state.cart.restaurantDistance ? `Delivery Fee ${state.cart.restaurantDistance}` : 'Delivery Fee');
