@@ -1415,7 +1415,8 @@ router.post('/cart/update', async (req, res) => {
 			const rowVal = row ? Number(String(row.value ?? row.intermediateText ?? 0).replace(/[^\d.-]/g, '')) : 0;
 			return Math.abs(Math.round(rowVal || Number(cartData.swiggy_money || cartData.free_cash_applied || cartData.offer_cash_reward || cartData.trade_discount_reward_amount || 0)));
 		};
-		const itemTotalForBhim = Number(d.cart_subtotal ?? d.item_total ?? (Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0));
+		const reqItemsSubtotalForBhim = Array.isArray(req.body.items) ? req.body.items.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 1), 0) : 0;
+		const itemTotalForBhim = Math.max(Number(d.cart_subtotal ?? d.item_total ?? 0), reqItemsSubtotalForBhim);
 		if (String(d.coupon_applied || '').toUpperCase() === 'BHIMNEW' || String(req.body.couponCode || '').toUpperCase() === 'BHIMNEW') {
 			bhimStatus = 'applied';
 		} else if (result.success && tid && req.body.autoApplyBhim !== false && !req.body.couponCode && !d.coupon_applied && !d.is_coupon_applied) {
