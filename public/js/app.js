@@ -2866,7 +2866,7 @@ async function openOrderDetails(orderId) {
       <div class="card" style="padding:14px 16px; margin-bottom:12px;">
         <div style="font-weight:800; font-size:14px; margin-bottom:10px;">🧺 Ordered Items Summary</div>
         ${items.length ? items.map((it) => {
-          const itPrice = it.sub_total || it.item_total || it.final_price || (it.cost ? Math.round(it.cost / 100) : '');
+          const itPrice = it.total || it.base_price || it.sub_total || it.item_total || it.final_price || (it.cost ? Math.round(it.cost / 100) : '');
           const isVeg = it.is_veg !== 0 && it.is_veg !== false;
           const variant = it.variants?.[0]?.name || it.sub_title || '';
           return `
